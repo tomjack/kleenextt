@@ -1,0 +1,5 @@
+name = "kleenextt"
+defaultTargets = ["Kleenextt"]
+
+[[lean_lib]]
+name = "Kleenextt"

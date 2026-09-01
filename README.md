@@ -8,3 +8,15 @@ the paper.
 
 [CCHM]: "Cubical Type Theory: a constructive interpretation of the
 univalence axiom", 2016. arXiv:1611.02108
+
+## Implementation
+
+Tier 2 of NOTES.md (the interval theory) in Lean 4: interval expressions,
+evaluation into a finite algebra, and a decision procedure for the equational
+theory of the variety that algebra generates. The Kleene interval is the
+instance at the three-element Kleene algebra, stock CCHM's De Morgan interval
+the instance at the four-element De Morgan algebra — the theory is one
+swappable value.
+
+`Kleenextt/Tests.lean` checks the expected (in)equations at compile time;
+`lake build` runs everything.
