@@ -11,12 +11,23 @@ univalence axiom", 2016. arXiv:1611.02108
 
 ## Implementation
 
-Tier 2 of NOTES.md (the interval theory) in Lean 4: interval expressions,
-evaluation into a finite algebra, and a decision procedure for the equational
-theory of the variety that algebra generates. The Kleene interval is the
-instance at the three-element Kleene algebra, stock CCHM's De Morgan interval
-the instance at the four-element De Morgan algebra — the theory is one
-swappable value.
+Two layers, `lake build` checks both.
 
-`Kleenextt/Tests.lean` checks the expected (in)equations at compile time;
-`lake build` runs everything.
+**MLTT kernel** (tiers 1/3 of NOTES.md): a port of elaboration-zoo's
+02-typecheck-closures-debruijn — core terms with de Bruijn indices, NbE with
+first-order closures and levels in values, beta-eta conversion, bidirectional
+check/infer, type-in-type. `Syntax.lean`, `Eval.lean`, `Check.lean`.
+
+**Lean as the surface language**: no string parser. `Frontend.lean` declares a
+`kexpr` syntax category (existing Lean tokens only) and commands — `kdef`,
+`#knf`, `#ktype`, `#kconv`, `#kfail` — that run our checker at elaboration
+time, keeping checked definitions in an environment extension. Object-level
+programs live in ordinary Lean files (`Examples.lean`) and object-level type
+errors are ordinary positioned Lean errors. A standalone parser stays easy to
+add if distribution without Lean ever matters.
+
+**Interval theory** (tier 2): `Interval.lean` decides the equational theory of
+the free Kleene (and free De Morgan) interval by evaluation into the finite
+algebra generating the variety; `Tests.lean` pins the expected (in)equations
+at compile time. Not yet connected to the kernel — cofibrations should be
+driven by what `coe`/`hcom` need.
