@@ -1,0 +1,21 @@
+# slug	kind	locator   (tab-separated; see scripts/fetch-refs.sh, annotations in REFERENCES.md)
+cchm	arxiv	1611.02108
+huber-canonicity	arxiv	1607.04156
+chs-homotopy-canonicity	arxiv	1902.06572
+chm-hits	arxiv	1802.01170
+orton-pitts	arxiv	1712.04864
+sterling-angiuli-normalization	arxiv	2101.11479
+chtt3-univalent-universes	arxiv	1712.01800
+chtt4-inductive-types	arxiv	1801.01568
+kovacs-thesis-signatures	arxiv	2302.08837
+zhang-demorgan-tutorial	arxiv	2210.08232
+buchholtz-morehouse-varieties	arxiv	1701.08189
+cubical-agda	url	https://staff.math.su.se/anders.mortberg/papers/cubicalagda.pdf
+unifying-cubical-models	url	https://staff.math.su.se/anders.mortberg/papers/unifying.pdf
+cubicaltt	git	https://github.com/mortberg/cubicaltt
+cctt	git	https://github.com/AndrasKovacs/cctt
+smalltt	git	https://github.com/AndrasKovacs/smalltt
+elaboration-zoo	git	https://github.com/AndrasKovacs/elaboration-zoo
+implicit-fun-elaboration	git	https://github.com/AndrasKovacs/implicit-fun-elaboration
+cart-cube	git	https://github.com/dlicata335/cart-cube
+agda-cubical	git	https://github.com/agda/cubical
