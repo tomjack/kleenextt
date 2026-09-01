@@ -10,7 +10,9 @@ and cubicaltt.
 - Cubical Agda: usable surface language, but the cubical machinery is layered
   onto a large existing elaborator; long-standing undiagnosed canonicity bugs.
 - cubicaltt: small enough to trust (certain branches have better canonicity
-  behavior), but no implicit arguments, so unusable in practice.
+  behavior — notably `pi4s3_nobug`, among the π₄(S³) experiment branches
+  `pi4s3*` on mortberg/cubicaltt), but no implicit arguments, so unusable in
+  practice.
 
 So the target is roughly "cctt with the Kleene interval": a small standalone
 kernel in the CCHM style plus a real elaborator with first-class implicit
