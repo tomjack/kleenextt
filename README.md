@@ -61,6 +61,16 @@ interval-binding lambda must be checked against a known type; the `Glue`
 eta rule is in unification but not in the computation rules; the
 Brunerie-number computation in `Brunerie.lean` does not finish.
 
+**Derived closures** (`Defun.lean`, exercised on a toy domain in
+`DefunTest.lean`; `Eval.lean` does not use it yet): a `defun … in … end
+defun` block holds the domain and its rules, with closures written at the
+use site as `closure% fun L i => body`. The block is elaborated twice:
+once against an `unsafe` function-valued closure type to record what each
+site captures, then for real, with the closure type an inductive with one
+constructor per site, `apply` re-elaborating each site's lambda in its
+arm, and a function per `deriving` clause mapping a class method over the
+fields (see NOTES.md, "Derived closure defunctionalization").
+
 **Lean as the surface language**: no string parser. `Frontend.lean` declares
 a `kexpr` syntax category (existing Lean tokens only) and commands — `kdef`,
 `kdata`, `#knf`, `#ktype`, `#kconv`, `#kdiffer`, `#kfail` — that run our

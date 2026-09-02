@@ -9,3 +9,5 @@ import Kleenextt.Examples
 import Kleenextt.Prelude
 import Kleenextt.Cubical
 import Kleenextt.Brunerie
+import Kleenextt.Defun
+import Kleenextt.DefunTest
