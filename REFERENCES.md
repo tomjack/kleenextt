@@ -101,6 +101,31 @@ API (2026-08-31).
   Not about cubical evaluation, but relevant to declaratively specifying
   theories and deriving structure from signatures.
 
+## Empty systems, ghcomp, validity
+
+Consult before implementing `hcomp`/`transp` for `Glue`.
+
+- [agda/agda#3415](https://github.com/agda/agda/issues/3415) — Mörtberg
+  proposes `ghcomp^i A [φ ↦ u] u₀ := hcomp^i A [φ ↦ u, ¬φ ↦ u₀] u₀`, which
+  reduces to `u₀` when `φ = 0` and so never produces an empty system. Used
+  in the `∀i.φ` correction of `transp` for `Glue`. Fixed by
+  [PR #3540](https://github.com/agda/agda/pull/3540): the `a1` composition
+  becomes a `gcomp`, and `equivProof` gains a `(φ = i0) ↦ c` face. Its test
+  `Issue3415.agda` checks that `uaβ` holds up to a trivial transport.
+- [agda/agda#3583](https://github.com/agda/agda/issues/3583) — empty
+  systems still arise from user `hcomp`s whose cofibration is not a
+  *valid* one. Validity = the cofibration is a classical tautology
+  (`i ∨ ¬i` yes, `i ∧ j` no); the primitives preserve it, so valid inputs
+  never yield empty systems. Not enforced by Agda. Non-valid systems can be
+  rewritten with `ghcomp`.
+- The validity notion is Definition 12 (`def:valid`) of
+  **chtt3-univalent-universes** (`refs/tex/chtt3-univalent-universes/meanings.tex`):
+  a list of equations `rᵢ = rᵢ'` is valid if some `rᵢ = rᵢ'` holds
+  outright, or it contains both `r = 0` and `r = 1` for the same `r`.
+- **cubical-agda** §5.2 explains why this needs cofibrations given by
+  interval elements `r` (so that `¬r` exists) rather than by the CCHM face
+  lattice, where `0_F` has no canonical representative.
+
 ## Other
 
 - **zhang-demorgan-tutorial** — Tesla Zhang, *A tutorial on implementing

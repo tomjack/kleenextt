@@ -18,6 +18,25 @@ So the target is roughly "cctt with the Kleene interval": a small standalone
 kernel in the CCHM style plus a real elaborator with first-class implicit
 arguments in the smalltt/elaboration-zoo style.
 
+## Open question: build in the validity constraint?
+
+Cofibrations are interval elements `r` (read `r = 1`), not face-lattice
+elements, so that `¬r` exists and `ghcomp` can be defined
+(see REFERENCES.md, "Empty systems"). Two ways to keep empty systems out
+of closed terms:
+
+- Enforce ABCFHL validity on every user `hcomp`: reject systems whose
+  cofibration is not a classical tautology. Guarantees no empty systems,
+  but rejects e.g. `hcomp [ (i=0) ↦ u ] u₀`, which then has to be
+  written as a `ghcomp`.
+- Enforce nothing, use `ghcomp` internally wherever a `∀i.φ` face can
+  vanish (`transp` for `Glue`), and leave user systems alone. This is
+  what Cubical Agda does.
+
+Current choice: the second, with a validity check available but not
+wired into `hcomp`. Revisit once there is enough code to measure the
+effect on normal forms.
+
 ## Open question: declarative rules → implementation
 
 How much of the system can be written down declaratively and compiled to code?
