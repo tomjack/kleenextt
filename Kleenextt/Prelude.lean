@@ -1,0 +1,58 @@
+import Kleenextt.Frontend
+
+/-! The object-level prelude: paths, transport, the identity equivalence,
+univalence via `Glue`, and the equivalence induced by a line of types, which
+the kernel uses for `hcomp` in the universe. -/
+
+namespace Kleenextt.Prelude
+
+kdef refl : {A : Type} {x : A} → Path A x x := λ {A} {x} i => x
+kdef sym : {A : Type} {x y : A} → Path A x y → Path A y x := λ p i => p (¬ i)
+kdef ap : {A B : Type} (f : A → B) {x y : A} → Path A x y → Path B (f x) (f y) := λ f p i => f (p i)
+kdef pcomp : {A : Type} {x y z : A} → Path A x y → Path A y z → Path A x z :=
+  λ {A} {x} p q i => hcomp A (λ j => [ (i = 0) ↦ x, (i = 1) ↦ q j ]) (p i)
+
+kdef transport : {A B : Type} → Path Type A B → A → B := λ p a => transp (λ i => p i) 0 a
+kdef transportRefl : {A : Type} (x : A) → Path A (transport (λ _ => A) x) x :=
+  λ {A} x i => transp (λ _ => A) i x
+
+-- The identity equivalence, as in CCHM Example 4 (contractible fibers).
+kdef idEquiv : (A : Type) → Equiv A A :=
+  λ A => (λ x => x, λ y => ((y, λ _ => y), λ z i => (snd z i, λ j => snd z (i ∧ j))))
+
+-- Univalence: an equivalence gives a line of types, by glueing.
+kdef ua : {A B : Type} → Equiv A B → Path Type A B :=
+  λ {A} {B} e i => Glue B [ (i = 0) ↦ (A, e), (i = 1) ↦ (B, idEquiv B) ]
+
+-- The computation rule for `ua`, up to a trivial transport (agda/agda#3415).
+kdef uaβ : {A B : Type} (e : Equiv A B) (x : A) → Path B (transport (ua e) x) (fst e x) :=
+  λ {A} {B} e x i => transp (λ _ => B) i (fst e x)
+
+/-! The equivalence induced by a line of types, CCHM §7.1. `lineToEquivFwd`
+is `eq^i E : Equiv (E 0) (E 1)`; `hcomp` in the universe needs the
+direction `Equiv (E 1) (E 0)`. -/
+
+kdef lineToEquivFwd : (E : I → Type) → Equiv (E 0) (E 1) := λ E =>
+  let f : E 0 → E 1 := λ x => transp (λ i => E i) 0 x;
+  let g : E 1 → E 0 := λ y => transp (λ i => E (¬ i)) 0 y;
+  let u : (x : E 0) (i : I) → E i := λ x i => transp (λ j => E (i ∧ j)) (¬ i) x;
+  let v : (y : E 1) (i : I) → E i := λ y i => transp (λ j => E (¬ (¬ i ∧ j))) i y;
+  (f, λ y =>
+    let θ0 : (i j : I) → E i := λ i j =>
+      comp (λ l => E (i ∧ l)) (λ l => [ (j = 0) ↦ v y (i ∧ l), (j = 1) ↦ u (g y) (i ∧ l), (i = 0) ↦ g y ]) (g y);
+    ((g y, λ j => θ0 1 j),
+     λ z =>
+       let x : E 0 := fst z;
+       let β : Path (E 1) y (f x) := snd z;
+       let θ1 : (i j : I) → E i := λ i j =>
+         comp (λ k => E (i ∨ ¬ k)) (λ k => [ (j = 0) ↦ v y (i ∨ ¬ k), (j = 1) ↦ u x (i ∨ ¬ k), (i = 1) ↦ β j ]) (β j);
+       let ω : (j : I) → E 0 := λ j => θ1 0 j;
+       λ k => (ω k, λ j =>
+         comp (λ i => E i)
+           (λ i => [ (k = 0) ↦ θ0 i j, (k = 1) ↦ θ1 i j, (j = 0) ↦ v y i, (j = 1) ↦ u (ω k) i ])
+           (ω (j ∧ k)))))
+
+kdef lineToEquiv : (E : I → Type) → Equiv (E 1) (E 0) := λ E => lineToEquivFwd (λ i => E (¬ i))
+#kbuiltin lineToEquiv
+
+end Kleenextt.Prelude

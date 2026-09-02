@@ -11,29 +11,57 @@ univalence axiom", 2016. arXiv:1611.02108
 
 ## Implementation
 
-Two layers, `lake build` checks both.
+`lake build` checks everything; the object-level tests are `#kconv`,
+`#kdiffer` and `#kfail` commands that fail the build when they fail.
 
-**MLTT elaborator** (tiers 1/3 of NOTES.md): a port of elaboration-zoo's
-04-implicit-args — core terms with de Bruijn indices, NbE with first-order
-closures and levels in values, metavariables solved by pattern unification,
-bidirectional check/infer with Agda-style insertion of implicit arguments and
-lambdas (positional and named), type-in-type. `Syntax.lean`, `Eval.lean`,
-`Unify.lean`, `Check.lean`. The metavariable context is passed explicitly
-(a section variable) rather than kept in a global ref as in the zoo, and
-each top-level definition is zonked and must leave no unsolved metas. This is
-the §2.6 insertion of Kovács' ICFP 2020 paper only; the paper's first-class
+**Interval theory** (tier 2 of NOTES.md): `Interval.lean` decides the
+equational theory of the free Kleene (and free De Morgan) interval by
+evaluation into the finite algebra generating the variety; `Tests.lean` pins
+the expected (in)equations at compile time. The kernel uses the Kleene
+theory for conversion of interval expressions. Cofibrations are interval
+elements `r` (read `r = 1`), decomposed into faces by cubicaltt's
+`invFormula`; the face decomposition is the same for the Kleene and
+De Morgan intervals. ABCFHL validity (`IExpr.isValid`) is available but not
+enforced (see NOTES.md).
+
+**Elaborator** (tiers 1/3): a port of elaboration-zoo's 04-implicit-args —
+core terms with de Bruijn indices, NbE with first-order closures and levels
+in values, metavariables solved by pattern unification, bidirectional
+check/infer with Agda-style insertion of implicit arguments and lambdas
+(positional and named), type-in-type. `Syntax.lean`, `Eval.lean`,
+`Unify.lean`, `Check.lean`. Metavariables and builtins live in a `Globals`
+record passed explicitly (a section variable) rather than in a global ref;
+each top-level definition is zonked and must leave no unsolved metas. This
+is the §2.6 insertion of Kovács' ICFP 2020 paper only; first-class
 polymorphism (postponed insertion, zoo stage 06) is not implemented.
 
-**Lean as the surface language**: no string parser. `Frontend.lean` declares a
-`kexpr` syntax category (existing Lean tokens only) and commands — `kdef`,
-`#knf`, `#ktype`, `#kconv`, `#kfail` — that run our checker at elaboration
-time, keeping checked definitions in an environment extension. Object-level
-programs live in ordinary Lean files (`Examples.lean`) and object-level type
-errors are ordinary positioned Lean errors. A standalone parser stays easy to
-add if distribution without Lean ever matters.
+**Cubical layer**: CCHM-style, with `transp` and `hcomp` as the primitives
+(the CHM / Cubical Agda decomposition) and `comp`, `hfill`, `ghcomp`
+derived. Type formers: Pi (also over `I`), Sigma, `PathP`, `Glue`, the
+universe, and two hardcoded inductives — strict `Bool` and the HIT `S1`
+(`base`, `loop`, eliminator computing on `hcomp`). `transp` for `Glue`
+follows Cubical Agda / Huber, with `ghcomp` in the `∀i.φ` correction so no
+empty systems arise; `hcomp` in the universe reduces to a `Glue` type along
+`lineToEquiv`, an object-level definition in `Prelude.lean` registered with
+`#kbuiltin`. Equivalences are contractible-fiber (`Equiv`, `isEquiv`,
+`fiber`, `isContr` are primitives unfolding to closed templates).
 
-**Interval theory** (tier 2): `Interval.lean` decides the equational theory of
-the free Kleene (and free De Morgan) interval by evaluation into the finite
-algebra generating the variety; `Tests.lean` pins the expected (in)equations
-at compile time. Not yet connected to the kernel — cofibrations should be
-driven by what `coe`/`hcom` need.
+Values use de Bruijn levels for both ordinary and interval variables;
+semantic interval binders record their level, and interval substitution is
+eager and re-runs the computation rules on neutral forms, as in cubicaltt.
+Every semantic operation takes the current context size as its fresh-level
+supply. Known gaps: no interval metavariables, so an interval-binding lambda
+must be checked against a known type; the `Glue` eta rule is in unification
+but not in the computation rules.
+
+**Lean as the surface language**: no string parser. `Frontend.lean` declares
+a `kexpr` syntax category (existing Lean tokens only) and commands — `kdef`,
+`#kbuiltin`, `#knf`, `#ktype`, `#kconv`, `#kdiffer`, `#kfail` — that run our
+elaborator at elaboration time, keeping checked definitions in an
+environment extension. The cubical primitives are ordinary identifiers
+recognised at the head of an application; systems are written
+`[ (i = 0) ↦ u, (i = 1) ↦ v ]`, and binding forms as `hcomp A (λ j => […]) u`,
+`transp (λ i => A) r u`, `comp (λ i => A) (λ i => […]) u`. Object-level
+programs live in ordinary Lean files: `Examples.lean` (MLTT and implicits),
+`Prelude.lean` (paths, `ua`, `uaβ`, `lineToEquiv`), `Cubical.lean` (tests,
+including transport around the circle through univalence).

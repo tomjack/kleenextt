@@ -6,3 +6,5 @@ import Kleenextt.Unify
 import Kleenextt.Check
 import Kleenextt.Frontend
 import Kleenextt.Examples
+import Kleenextt.Prelude
+import Kleenextt.Cubical

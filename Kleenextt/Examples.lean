@@ -42,10 +42,10 @@ kdef map : {A B : _} → (A → B) → List A → List B := λ {A} {B} f xs L c 
 kdef list1 : List Bool := cons true (cons false (cons true nil))
 
 -- Dependent composition with higher-rank implicit function types.
-kdef comp : {A : _} {B : A → Type} {C : {a : A} → B a → Type}
+kdef compose : {A : _} {B : A → Type} {C : {a : A} → B a → Type}
   (f : {a : A} (b : B a) → C b) (g : (a : A) → B a) (a : A) → C (g a)
   := λ f g a => f (g a)
-kdef compExample : List Bool := comp (cons true) (cons false) nil
+kdef composeExample : List Bool := compose (cons true) (cons false) nil
 
 -- Church naturals: the standard evaluator stress test.
 kdef CNat : Type := (N : Type) → (N → N) → N → N

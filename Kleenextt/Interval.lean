@@ -9,7 +9,7 @@ inductive IExpr where
   | neg (r : IExpr)
   | meet (r s : IExpr)
   | join (r s : IExpr)
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Inhabited
 
 namespace IExpr
 
@@ -19,6 +19,46 @@ def arity : IExpr → Nat
   | var i => i + 1
   | neg r => r.arity
   | meet r s | join r s => max r.arity s.arity
+
+/-- The generators mentioned, without duplicates. -/
+def vars : IExpr → List Nat
+  | zero | one => []
+  | var i => [i]
+  | neg r => r.vars
+  | meet r s | join r s => (r.vars ++ s.vars).eraseDups
+
+def mapVars (f : Nat → IExpr) : IExpr → IExpr
+  | zero => zero
+  | one => one
+  | var i => f i
+  | neg r => neg (r.mapVars f)
+  | meet r s => meet (r.mapVars f) (s.mapVars f)
+  | join r s => join (r.mapVars f) (s.mapVars f)
+
+def mapVarsM [Monad m] (f : Nat → m IExpr) : IExpr → m IExpr
+  | zero => pure zero
+  | one => pure one
+  | var i => f i
+  | neg r => do pure (neg (← r.mapVarsM f))
+  | meet r s => do pure (meet (← r.mapVarsM f) (← s.mapVarsM f))
+  | join r s => do pure (join (← r.mapVarsM f) (← s.mapVarsM f))
+
+def ofBool : Bool → IExpr
+  | false => zero
+  | true => one
+
+/-- Precedences: 0 ∨, 1 ∧, 2 atoms. -/
+def pretty (name : Nat → String) (p : Nat) : IExpr → String
+  | zero => "0"
+  | one => "1"
+  | var i => name i
+  | neg r => s!"¬{r.pretty name 2}"
+  | meet r s =>
+    let str := s!"{r.pretty name 1} ∧ {s.pretty name 1}"
+    if p > 1 then s!"({str})" else str
+  | join r s =>
+    let str := s!"{r.pretty name 0} ∨ {s.pretty name 0}"
+    if p > 0 then s!"({str})" else str
 
 end IExpr
 
@@ -59,6 +99,17 @@ def decEq [DecidableEq α] (r s : IExpr) : Bool :=
 /-- Decide `r ≤ s` (i.e. `r ∨ s = s`) in the variety `A` generates. -/
 def decLe [DecidableEq α] (r s : IExpr) : Bool :=
   A.decEq (.join r s) s
+
+/-- `decEq`, enumerating assignments only for the generators that occur, so
+the cost is exponential in the number of generators mentioned rather than
+in the largest generator index. -/
+def decEqOn [DecidableEq α] (r s : IExpr) : Bool :=
+  let vs := (r.vars ++ s.vars).eraseDups
+  (A.envs vs.length).all fun ρ =>
+    let f := fun i => match vs.idxOf? i with
+      | some k => ρ.getD k A.bot
+      | none => A.bot
+    A.eval f r == A.eval f s
 
 end Alg
 
@@ -142,5 +193,100 @@ def deMorgan : Alg DM4 where
   neg := DM4.neg
   meet := DM4.meet
   join := DM4.join
+
+/-- The two-element Boolean algebra: the classical reading of a cofibration. -/
+def boolean : Alg Bool where
+  elems := [false, true]
+  bot := false
+  top := true
+  neg := not
+  meet := and
+  join := or
+
+/-! ## The interval used by the kernel
+
+Interval expressions in values are `IExpr`s over de Bruijn levels; the
+equational theory is the free Kleene algebra. -/
+
+/-- Equality in the free Kleene interval. -/
+def ieq (r s : IExpr) : Bool := kleene.decEqOn r s
+
+namespace IExpr
+
+def isZero (r : IExpr) : Bool := ieq r zero
+def isOne (r : IExpr) : Bool := ieq r one
+
+/-- ABCFHL validity: the cofibration `r = 1` holds classically, so no closed
+instance of a system on `r` can be empty. -/
+def isValid (r : IExpr) : Bool := boolean.decEqOn r one
+
+end IExpr
+
+/-- A face: a partial assignment of generators to endpoints, sorted by
+generator and without repetition. -/
+abbrev Face := List (Nat × Bool)
+
+namespace Face
+
+def lookup (α : Face) (i : Nat) : Option Bool :=
+  (α.find? (·.1 == i)).map (·.2)
+
+def mentions (α : Face) (i : Nat) : Bool :=
+  (α.lookup i).isSome
+
+/-- Extend by `i ↦ d`; `none` if `α` already sends `i` elsewhere. -/
+def insert (i : Nat) (d : Bool) : Face → Option Face
+  | [] => some [(i, d)]
+  | (j, e) :: α =>
+    if i < j then some ((i, d) :: (j, e) :: α)
+    else if i == j then (if d == e then some ((j, e) :: α) else none)
+    else ((j, e) :: ·) <$> insert i d α
+
+/-- The conjunction of two faces; `none` if they disagree on a generator. -/
+def meet (α β : Face) : Option Face :=
+  β.foldlM (fun γ (i, d) => γ.insert i d) α
+
+def compatible (α β : Face) : Bool :=
+  (α.meet β).isSome
+
+/-- `α ≤ β`: `α` is at least as specific as `β` (it fixes every generator `β` fixes, the same way). -/
+def le (α β : Face) : Bool :=
+  β.all fun (i, d) => α.lookup i == some d
+
+/-- The generators fixed by `α` but not by `β`. -/
+def minus (α β : Face) : Face :=
+  α.filter fun (i, _) => !β.mentions i
+
+/-- The substitution `α` performs on interval expressions. -/
+def apply (α : Face) (r : IExpr) : IExpr :=
+  r.mapVars fun i => match α.lookup i with
+    | some d => .ofBool d
+    | none => .var i
+
+/-- The cofibration `α` denotes: the conjunction of its literals. -/
+def toIExpr (α : Face) : IExpr :=
+  match α.map (fun (i, d) => if d then IExpr.var i else .neg (.var i)) with
+  | [] => .one
+  | l :: ls => ls.foldl .meet l
+
+end Face
+
+/-- Keep only the maximal faces: drop any face that is at least as specific as
+another one in the list. -/
+def maximalFaces (fs : List Face) : List Face :=
+  let fs := fs.eraseDups
+  fs.filter fun α => !fs.any fun β => β != α && α.le β
+
+/-- The maximal faces on which `r = b`; cubicaltt's `invFormula`. -/
+partial def invFormula : IExpr → Bool → List Face
+  | .zero, b => if b then [] else [[]]
+  | .one, b => if b then [[]] else []
+  | .var i, b => [[(i, b)]]
+  | .neg r, b => invFormula r (!b)
+  | .meet r s, false => maximalFaces (invFormula r false ++ invFormula s false)
+  | .meet r s, true =>
+    maximalFaces <| (invFormula r true).flatMap fun α =>
+      (invFormula s true).filterMap fun β => α.meet β
+  | .join r s, b => invFormula (.meet (.neg r) (.neg s)) (!b)
 
 end Kleenextt
