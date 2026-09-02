@@ -125,20 +125,6 @@ private def rimpl (x : String) (a b : Raw) : Raw := .pi x .impl a b
 
 /-- Types of the primitive constants. -/
 private def primType : String → Option Raw
-  | "Bool" => some .univ
-  | "true" | "false" => some (rv "Bool")
-  | "Bool.elim" => some <|
-    rpi "P" (rarr (rv "Bool") .univ) <|
-      rarr (rap (rv "P") [rv "true"]) <| rarr (rap (rv "P") [rv "false"]) <|
-        rpi "b" (rv "Bool") (rap (rv "P") [rv "b"])
-  | "S1" => some .univ
-  | "base" => some (rv "S1")
-  | "loop" => some (rarr (rv "I") (rv "S1"))
-  | "S1.elim" => some <|
-    rpi "P" (rarr (rv "S1") .univ) <|
-      rpi "b" (rap (rv "P") [rv "base"]) <|
-        rarr (rap (rv "PathP") [.lam "i" .expl (rap (rv "P") [rap (rv "loop") [rv "i"]]), rv "b", rv "b"]) <|
-          rpi "x" (rv "S1") (rap (rv "P") [rv "x"])
   | "PathP" => some <|
     rpi "A" (rarr (rv "I") .univ) <| rarr (rap (rv "A") [.i0]) <| rarr (rap (rv "A") [.i1]) .univ
   | "Path" => some <| rpi "A" .univ <| rarr (rv "A") <| rarr (rv "A") .univ
@@ -154,6 +140,11 @@ def lineU : Val := .pi "i" .expl .interval (.mk [] .univ)
 /-- `(T : Type) × Equiv T A`, the type of a `Glue` component over `A`. -/
 def glueCompTy (A : Val) : Val :=
   .sigma "T" .univ (.mk [A] (.app (.app (.prim "Equiv") (.var 0) .expl) (.var 1) .expl))
+
+/-- The type of a constructor: its fields, then its interval binders. -/
+def conType (d : DataInfo) (con : ConInfo) : Tm :=
+  con.fields.foldr (fun (f, T) acc => .pi f .expl T acc)
+    (con.ivars.foldr (fun i acc => .pi i .expl .interval acc) (.prim d.name))
 
 mutual
   /-- Check a type: `I` is allowed as a Pi domain but is not in `Type`. -/
@@ -203,9 +194,10 @@ mutual
       let cxt' := cxt.bind x .interval
       let t ← check cxt' t (lineApp G cxt'.lvl A (.var cxt.lvl))
       let G ← get
-      let vt := eval G cxt'.lvl cxt'.env t
-      let at0 := act G cxt.lvl [(cxt.lvl, .zero)] vt
-      let at1 := act G cxt.lvl [(cxt.lvl, .one)] vt
+      -- The endpoints are evaluated in the restricted context rather than
+      -- restricted after evaluation: the open value can be far larger.
+      let at0 := eval G cxt'.lvl (cxt'.restrict G [(cxt.lvl, false)]).env t
+      let at1 := eval G cxt'.lvl (cxt'.restrict G [(cxt.lvl, true)]).env t
       try unify cxt.lvl at0 x0; unify cxt.lvl at1 x1
       catch e =>
         let G ← get
@@ -221,6 +213,7 @@ mutual
       let u ← check (cxt.define x vt va) u a'
       return .letE x a t u
     | .hole, _ => freshMeta cxt
+    | .sorry, _ => pure (.prim "sorry")
     | .pair t u, .sigma _ a c =>
       let t ← check cxt t a
       let vt ← evalC cxt t
@@ -245,12 +238,16 @@ mutual
         | .interval => pure (.i (.var i), .interval)
         | a => pure (.var i, a)
       | .error e =>
-        match primType x with
-        | some ty =>
+        let G ← get
+        match G.def? x, G.data? x, G.con? x, primType x with
+        | some (_, ty), _, _, _ => pure (.top x, ty)
+        | _, some _, _, _ => pure (.prim x, .univ)
+        | _, _, some (d, con), _ => pure (.prim x, eval G 0 [] (conType d con))
+        | _, _, _, some ty =>
           let ty ← check {} ty .univ
           let G ← get
           pure (.prim x, eval G 0 [] ty)
-        | none => if x == "I" then throw "I is not a term of a type" else throw e
+        | _, _, _, none => if x == "I" then throw "I is not a term of a type" else throw e
     | .univ => pure (.univ, .univ)
     | .app t u k => do
       let (i, t, tty) ← match k with
@@ -342,6 +339,57 @@ mutual
       let va ← evalC cxt a
       let t ← check cxt t va
       pure (t, va)
+    | .sorry => throw "sorry needs a known type"
+    | .split x P cases => do
+      let (x, xty) ← infer cxt x
+      let (x, xty) ← insertAll cxt x xty
+      let G ← get
+      let d ← match force G cxt.lvl xty with
+        | .prim D [] =>
+          match G.data? D with
+          | some d => pure d
+          | none => throw s!"case: {D} is not an inductive type"
+        | a => throw s!"case: expected an inductive type, inferred: {cxt.showVal G a}"
+      let P ← check cxt P (.pi "_" .expl (.prim d.name []) (.mk [] .univ))
+      let vP ← evalC cxt P
+      let vx ← evalC cxt x
+      let mut cases' : List (String × List String × Tm) := []
+      for con in d.cons do
+        let some (_, names, body) := cases.find? (·.1 == con.name)
+          | throw s!"case: missing case for {con.name}"
+        unless names.length == con.arity do
+          throw s!"case: {con.name} takes {con.arity} arguments"
+        let mut c := cxt
+        let mut fenv : Env := []
+        let mut args : List Val := []
+        for ((_, T), name) in con.fields.zip (names.take con.fields.length) do
+          let G ← get
+          let v := Val.var c.lvl
+          c := c.bind name (eval G c.lvl fenv T)
+          fenv := v :: fenv
+          args := args ++ [v]
+        for name in names.drop con.fields.length do
+          args := args ++ [Val.i (.var c.lvl)]
+          c := c.bind name .interval
+        let G ← get
+        let body ← check c body (vApp G c.lvl vP (prim' G c.lvl con.name args) .expl)
+        let G ← get
+        let vbody := eval G c.lvl c.env body
+        let conEnv := args.reverse
+        let casesSoFar := cases' ++ [(con.name, names, body)]
+        -- A `sorry` case is exempt from its boundary, like a cctt hole.
+        let boundary := if body matches .prim "sorry" then [] else con.boundary
+        for (φ, e) in boundary do
+          for δ in invFormula (evalI conEnv φ) true do
+            let G ← get
+            let lhs := face G c.lvl δ vbody
+            let rhs := splitApp G c.lvl (face G c.lvl δ vP) (cxt.env.map (face G c.lvl δ)) casesSoFar
+              (eval G c.lvl (conEnv.map (face G c.lvl δ)) e)
+            try unify c.lvl lhs rhs
+            catch err => throw s!"case: the {con.name} case does not respect its boundary ({err})"
+        cases' := casesSoFar
+      let G ← get
+      pure (.split P cases' x, vApp G cxt.lvl vP vx .expl)
     | t@(.i0) | t@(.i1) | t@(.ineg _) | t@(.imeet _ _) | t@(.ijoin _ _) => do
       pure (.i (← checkI cxt t), .interval)
     | .system _ => throw "a system can only be an argument of hcomp, hfill, comp, Glue or glue"
@@ -353,7 +401,7 @@ mutual
       let vr := evalI cxt.env r
       for δ in invFormula vr true do
         let G ← get
-        let Aδ := face G cxt.lvl δ vA
+        let Aδ := eval G cxt.lvl (cxt.restrict G δ).env A
         let at0 := lineApp G cxt.lvl Aδ .zero
         let ati := lineApp G (cxt.lvl + 1) Aδ (.var cxt.lvl)
         try unify (cxt.lvl + 1) ati at0
@@ -365,14 +413,14 @@ mutual
       let vA ← evalC cxt A
       let (entries, vsys) ← checkBoundSys cxt j sys vA
       let u ← check cxt u vA
-      checkBoundary cxt vsys (← evalC cxt u)
+      checkBoundary cxt vsys u
       pure (.hcomp g A entries u, vA)
     | .hfill A j sys u r => do
       let A ← check cxt A .univ
       let vA ← evalC cxt A
       let (entries, vsys) ← checkBoundSys cxt j sys vA
       let u ← check cxt u vA
-      checkBoundary cxt vsys (← evalC cxt u)
+      checkBoundary cxt vsys u
       let r ← checkI cxt r
       pure (.hfill A entries u r, vA)
     | .comp i A j sys u => do
@@ -383,7 +431,7 @@ mutual
       let vAi := eval G cxti.lvl cxti.env A
       let (entries, vsys) ← checkBoundSys cxt j sys vAi
       let u ← check cxt u (lineApp G cxt.lvl vAline .zero)
-      checkBoundary cxt vsys (← evalC cxt u)
+      checkBoundary cxt vsys u
       let G ← get
       pure (.comp A entries u, lineApp G cxt.lvl vAline .one)
     | .glueTy A sys => do
@@ -460,10 +508,11 @@ mutual
           catch e => throw s!"system components disagree where their faces overlap ({e})"
 
   /-- The base of a composition must agree with the sides at `0`. -/
-  partial def checkBoundary (cxt : Cxt) (vsys : System Val) (u : Val) : ElabM Unit := do
+  partial def checkBoundary (cxt : Cxt) (vsys : System Val) (u : Tm) : ElabM Unit := do
     for (δ, s) in vsys do
       let G ← get
-      try unify cxt.lvl (face G cxt.lvl δ u) (lineApp G cxt.lvl s .zero)
+      let uδ := eval G cxt.lvl (cxt.restrict G δ).env u
+      try unify cxt.lvl uδ (lineApp G cxt.lvl s .zero)
       catch e => throw s!"the base does not match the sides of the system ({e})"
 
   partial def checkGlue (cxt : Cxt) (sys : List (Raw × Raw)) (a : Raw) (A : Val) (sysG : System Val) : ElabM Tm := do
@@ -484,11 +533,11 @@ mutual
     for (δ, _) in sysG do
       unless comps.any (·.1 == δ) do throw "glue: the system does not cover every face of the Glue type"
     let a ← check cxt a A
-    let va ← evalC cxt a
     for (δ, vt) in comps do
       let G ← get
       let Te := (sysG.find? (·.1 == δ)).get!.2
-      try unify cxt.lvl (face G cxt.lvl δ va) (vApp G cxt.lvl (vFst G (vSnd G Te)) vt .expl)
+      let aδ := eval G cxt.lvl (cxt.restrict G δ).env a
+      try unify cxt.lvl aδ (vApp G cxt.lvl (vFst G (vSnd G Te)) vt .expl)
       catch e => throw s!"glue: the base is not the image of the component under the equivalence ({e})"
     let G ← get
     pure (.glue (cxt.quoteSysFlat G sysG) entries a)
@@ -505,6 +554,7 @@ partial def zonk (G : Globals) (env : Env) (l : Nat) : Tm → Except String Tm
   | .interval => pure .interval
   | .i r => pure (.i r)
   | .prim n => pure (.prim n)
+  | .top n => pure (.top n)
   | .app t u i => do pure (.app (← z t) (← z u) i)
   | .lam x i t => do pure (.lam x i (← under t))
   | .ilam x t => do pure (.ilam x (← underI t))
@@ -522,6 +572,15 @@ partial def zonk (G : Globals) (env : Env) (l : Nat) : Tm → Except String Tm
   | .glueTy a sys => do pure (.glueTy (← z a) (← zflat sys))
   | .glue tySys sys a => do pure (.glue (← zflat tySys) (← zflat sys) (← z a))
   | .unglue b sys => do pure (.unglue (← z b) (← zflat sys))
+  | .split P cases x => do
+    let cases' ← cases.mapM fun (c, names, body) => do
+      let (nf, ni) := match G.con? c with
+        | some (_, con) => (con.fields.length, con.ivars.length)
+        | none => (0, 0)
+      let args := (List.range nf).map (fun k => Val.var (l + k))
+        ++ (List.range ni).map (fun k => Val.i (.var (l + nf + k)))
+      pure (c, names, ← zonk G (args.reverse ++ env) (l + nf + ni) body)
+    pure (.split (← z P) cases' (← z x))
 where
   z := zonk G env l
   under (t : Tm) := zonk G (.var l :: env) (l + 1) t

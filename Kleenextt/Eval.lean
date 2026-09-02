@@ -43,6 +43,7 @@ mutual
     | glue (tySys sys : List (Face × Val)) (a : Val)
     | unglue (b : Val) (sys : List (Face × Val))
     | prim (name : String) (args : List Val)
+    | split (P : Val) (env : List Val) (cases : List (String × List String × Tm)) (x : Val)
 
   inductive Closure where
     | mk (env : List Val) (t : Tm)
@@ -57,15 +58,53 @@ inductive MetaEntry where
   | unsolved
   | solved (v : Val)
 
-/-- Metavariables (numbered densely in creation order) and the object-level
-definitions the kernel's computation rules refer to. -/
+/-- A constructor of a user-declared inductive type: a telescope of fields
+(each type in the context of the previous fields, closed otherwise), then
+interval binders, then a boundary system over the interval binders whose
+terms live in the context of the fields and interval binders. -/
+structure ConInfo where
+  name : String
+  fields : List (String × Tm)
+  ivars : List String
+  boundary : List (IExpr × Tm)
+
+def ConInfo.arity (c : ConInfo) : Nat :=
+  c.fields.length + c.ivars.length
+
+/-- A parameterless inductive type; a HIT if some constructor binds
+interval variables. Values of the type are `prim` applications of its
+constructors, plus `hcomp`s for HITs. -/
+structure DataInfo where
+  name : String
+  cons : List ConInfo
+
+def DataInfo.hit (d : DataInfo) : Bool :=
+  d.cons.any (!·.ivars.isEmpty)
+
+/-- Metavariables (numbered densely in creation order), the object-level
+definitions the kernel's computation rules refer to, and the declared
+inductive types. -/
 structure Globals where
   metas : Array MetaEntry := #[]
   /-- `(E : I → Type) → Equiv (E 1) (E 0)`; `hcomp` in the universe needs it. -/
   lineToEquiv : Option Val := none
+  datas : List DataInfo := []
+  /-- Top-level definitions: name, value, type. Closed values, kept out of
+  environments so that substitution never traverses them, and computed only
+  when first referenced. -/
+  defs : List (String × Thunk Val × Val) := []
 
 def Globals.lookupMeta (G : Globals) (m : Nat) : MetaEntry :=
   G.metas.getD m .unsolved
+
+def Globals.def? (G : Globals) (n : String) : Option (Thunk Val × Val) :=
+  (G.defs.find? (·.1 == n)).map (·.2)
+
+def Globals.data? (G : Globals) (n : String) : Option DataInfo :=
+  G.datas.find? (·.name == n)
+
+def Globals.con? (G : Globals) (c : String) : Option (DataInfo × ConInfo) :=
+  G.datas.findSome? fun d => (d.cons.find? (·.name == c)).map (d, ·)
 
 /-- A substitution of interval expressions for levels. -/
 abbrev Subst := List (Nat × IExpr)
@@ -76,7 +115,7 @@ def get (σ : Subst) (l : Nat) : Option IExpr :=
   (σ.find? (·.1 == l)).map (·.2)
 
 def apply (σ : Subst) (r : IExpr) : IExpr :=
-  r.mapVars fun l => (σ.get l).getD (.var l)
+  (r.mapVars fun l => (σ.get l).getD (.var l)).norm
 
 /-- Restrict the images by a face. -/
 def under (σ : Subst) (α : Face) : Subst :=
@@ -138,10 +177,35 @@ private def primDef : String → Option (Nat × Tm)
 
 /-- Evaluate an interval expression over indices in an environment. -/
 def evalI (env : Env) (r : IExpr) : IExpr :=
-  r.mapVars fun idx =>
+  (r.mapVars fun idx =>
     match env.getD idx default with
     | .i s => s
-    | _ => panic! "evalI: not an interval variable"
+    | _ => panic! "evalI: not an interval variable").norm
+
+/-- Whether a value mentions the level `l` (as an interval variable). -/
+partial def Val.mentionsLvl (l : Nat) (v : Val) : Bool :=
+  let go := Val.mentionsLvl l
+  let goClo : Closure → Bool
+    | .mk env _ => env.any go
+  let goSys (sys : System Val) : Bool := sys.any fun (α, u) => α.mentions l || go u
+  match v with
+  | .var _ | .univ | .interval => false
+  | .flex _ sp => sp.any (go ·.1)
+  | .lam _ _ c | .ilam _ c => goClo c
+  | .ibind l' body => l' != l && go body
+  | .app t u _ | .pair t u => go t || go u
+  | .papp p r x y => go p || r.vars.contains l || go x || go y
+  | .i r => r.vars.contains l
+  | .pi _ _ a c | .sigma _ a c => go a || goClo c
+  | .fst t | .snd t => go t
+  | .pathP a x y => go a || go x || go y
+  | .transp a r u => go a || r.vars.contains l || go u
+  | .hcomp a sys u => go a || goSys sys || go u
+  | .glueTy a sys => go a || goSys sys
+  | .glue tySys sys a => goSys tySys || goSys sys || go a
+  | .unglue b sys => go b || goSys sys
+  | .prim _ args => args.any go
+  | .split P env _ x => go P || env.any go || go x
 
 section
 variable (G : Globals)
@@ -235,6 +299,11 @@ mutual
     | .glue tySys sys a => glue' (evalSysFlat L env tySys) (evalSysFlat L env sys) (eval L env a)
     | .unglue b sys => unglue' L (eval L env b) (evalSysFlat L env sys)
     | .prim n => prim' L n []
+    | .top n =>
+      match G.def? n with
+      | some (v, _) => v.get
+      | none => panic! s!"eval: unknown definition {n}"
+    | .split P cases x => splitApp L (eval L env P) env cases (eval L env x)
 
   /-- Evaluate a system whose components bind an interval variable, giving
   components of line type, each in the environment restricted to its face. -/
@@ -275,6 +344,7 @@ mutual
     | .glue tySys sys a => glue' (actSys L σ tySys) (actSys L σ sys) (act L σ a)
     | .unglue b sys => unglue' L (act L σ b) (actSys L σ sys)
     | .prim n args => prim' L n (args.map (act L σ))
+    | .split P env cases x => splitApp L (act L σ P) (env.map (act L σ)) cases (act L σ x)
 
   /-- Substitute in a system: a face `α` becomes the faces on which `σ`
   makes `α`'s equations hold. -/
@@ -299,34 +369,86 @@ mutual
     | "I", [] => .interval
     | "PathP", [a, x, y] => .pathP a x y
     | "Path", [a, x, y] => .pathP (.ilam "_" (.mk [a] (.var 1))) x y
-    | "loop", [.i r] => if r.isZero || r.isOne then .prim "base" [] else .prim "loop" [.i r]
-    | "Bool.elim", [P, t, f, b] => boolElim' P t f b
-    | "S1.elim", [P, b, l, x] => s1Elim' L P b l x
     | _, _ =>
-      match primDef name with
-      | some (arity, body) =>
-        if args.length == arity then args.foldl (fun f a => vApp L f a .expl) (eval L [] body)
+      match G.con? name with
+      | some (_, con) =>
+        -- A saturated higher constructor reduces to its boundary on a face that holds.
+        if args.length == con.arity then
+          let env := args.reverse
+          match con.boundary.find? (fun (φ, _) => (evalI env φ).isOne) with
+          | some (_, e) => eval L env e
+          | none => .prim name args
         else .prim name args
-      | none => .prim name args
+      | none =>
+        match primDef name with
+        | some (arity, body) =>
+          if args.length == arity then args.foldl (fun f a => vApp L f a .expl) (eval L [] body)
+          else .prim name args
+        | none => .prim name args
 
-  partial def boolElim' (P t f b : Val) : Val :=
-    match b with
-    | .prim "true" [] => t
-    | .prim "false" [] => f
-    | _ => .prim "Bool.elim" [P, t, f, b]
-
-  partial def s1Elim' (L : Nat) (P b l x : Val) : Val :=
+  /-- Dependent case analysis: reduces on a saturated constructor and, for a
+  HIT, on an `hcomp` (the CHM rule, composing over the filler). -/
+  partial def splitApp (L : Nat) (P : Val) (env : Env) (cases : List (String × List String × Tm)) (x : Val) : Val :=
     match x with
-    | .prim "base" [] => b
-    | .prim "loop" [.i r] => papp' L l r b b
-    | .hcomp (.prim "S1" []) sys u =>
-      let fill := hfill' L (.prim "S1" []) sys u
-      let pline := .ibind L (vApp (L + 1) P (lineApp (L + 1) fill (.var L)) .expl)
-      let sides := sys.map fun (α, s) =>
-        (α, .ibind L (s1Elim' (L + 1) (face (L + 1) α P) (face (L + 1) α b) (face (L + 1) α l)
-          (lineApp (L + 1) s (.var L))))
-      comp' L pline (mkSystem sides) (s1Elim' L P b l u) false
-    | _ => .prim "S1.elim" [P, b, l, x]
+    | .prim c args =>
+      match cases.find? (·.1 == c), G.con? c with
+      | some (_, _, body), some (_, con) =>
+        if args.length == con.arity then eval L (args.reverse ++ env) body
+        else .split P env cases x
+      | _, _ => .split P env cases x
+    | .hcomp (.prim D []) sys u =>
+      match G.data? D with
+      | some d =>
+        if d.hit then
+          let fill := hfill' L (.prim D []) sys u
+          let pline := .ibind L (vApp (L + 1) P (lineApp (L + 1) fill (.var L)) .expl)
+          let sides := sys.map fun (α, s) =>
+            (α, .ibind L (splitApp (L + 1) (face (L + 1) α P) (env.map (face (L + 1) α)) cases
+              (lineApp (L + 1) s (.var L))))
+          comp' L pline (mkSystem sides) (splitApp L P env cases u) false
+        else .split P env cases x
+      | none => .split P env cases x
+    | _ => .split P env cases x
+
+  /-- `hcomp` at a strict inductive type: constructor-wise, along the field
+  telescope, when the base and every side are the same constructor. -/
+  partial def hcompData (L : Nat) (A : Val) (sys : System Val) (u : Val) : Val :=
+    match u with
+    | .prim c args =>
+      match G.con? c with
+      | some (_, con) =>
+        let sideArgs := sys.map fun (α, s) =>
+          match lineApp (L + 1) s (.var L) with
+          | .prim c' args' => if c' == c && args'.length == args.length then (α, some args') else (α, none)
+          | _ => (α, none)
+        if args.length != con.fields.length || sideArgs.any (·.2.isNone) then .hcomp A sys u
+        else
+          let sideArgs := sideArgs.map fun (α, as) => (α, as.getD [])
+          .prim c (hcompFields L 0 con.fields [] sideArgs args)
+      | none => .hcomp A sys u
+    | _ => .hcomp A sys u
+
+  /-- The fields of a constructor-wise `hcomp`; `fills` are the fillers of
+  the previous fields, most recent first, which the next field's type may
+  depend on. -/
+  partial def hcompFields (L : Nat) (k : Nat) (fields : List (String × Tm)) (fills : List Val)
+      (sideArgs : List (Face × List Val)) (args : List Val) : List Val :=
+    match fields with
+    | [] => []
+    | (_, T) :: rest =>
+      let tline := .ibind L (eval (L + 1) (fills.map fun f => lineApp (L + 1) f (.var L)) T)
+      let sysk := sideArgs.map fun (α, as) => (α, .ibind L (as.getD k default))
+      let uk := args.getD k default
+      let vk := comp' L tline sysk uk false
+      let fk := compFill' L tline sysk uk
+      vk :: hcompFields L (k + 1) rest (fk :: fills) sideArgs args
+
+  /-- The filler of a heterogeneous composition, as a line. -/
+  partial def compFill' (L : Nat) (a : Val) (sys : System Val) (u0 : Val) : Val :=
+    let diag := IExpr.meet (.var L) (.var (L + 1))
+    let sides := sys.map fun (α, s) => (α, .ibind (L + 1) (lineApp (L + 2) s diag))
+    .ibind L (comp' (L + 1) (.ibind (L + 1) (lineApp (L + 2) a diag))
+      (mkSystem (sides ++ [([(L, false)], .ibind (L + 1) u0)])) u0 false)
 
   /-- `transp^i A r u`, with `A` a line; identity when `r = 1`. -/
   partial def transp' (L : Nat) (a : Val) (r : IExpr) (u : Val) : Val :=
@@ -354,8 +476,7 @@ mutual
         | _ => panic! "transp: line is not constantly a path type"
       .ibind L body
     | .univ => u
-    | .prim "Bool" [] => u
-    | .prim "S1" [] => u
+    | .prim n [] => if (G.data? n).isSome then u else .transp a r u
     | .glueTy A sysG => transpGlue L r u A sysG
     | _ => .transp a r u
 
@@ -427,12 +548,10 @@ mutual
       .ibind L body
     | .univ => hcompU L sys u
     | .glueTy B sysG => hcompGlue L B sysG sys u
-    | .prim "Bool" [] =>
-      let isCon : Val → Bool
-        | .prim "true" [] | .prim "false" [] => true
-        | _ => false
-      if isCon u && sys.all (fun (_, s) => isCon (lineApp (L + 1) s (.var L))) then u
-      else .hcomp A sys u
+    | .prim n [] =>
+      match G.data? n with
+      | some d => if d.hit then .hcomp A sys u else hcompData L A sys u
+      | none => .hcomp A sys u
     | _ => .hcomp A sys u
 
   /-- `hcomp` at a function type, applied. -/
@@ -565,6 +684,18 @@ def lift (p : PRen) : PRen :=
 
 end PRen
 
+/-- Instantiate a case body with fresh variables for the constructor's
+fields and interval binders, starting at level `l`; also the renaming
+lifted over them. -/
+def instCase (l : Nat) (env : Env) (c : String) (body : Tm) : Val × PRen :=
+  let (nf, ni) := match G.con? c with
+    | some (_, con) => (con.fields.length, con.ivars.length)
+    | none => (0, 0)
+  let args := (List.range nf).map (fun k => Val.var (l + k))
+    ++ (List.range ni).map (fun k => Val.i (.var (l + nf + k)))
+  let p := (List.range (nf + ni)).foldl (fun q _ => q.lift) (PRen.id l)
+  (eval G (l + nf + ni) (args.reverse ++ env) body, p)
+
 /-- Read a value back into core syntax under a partial renaming, failing on
 a variable outside the renaming or on an occurrence of metavariable `occ`. -/
 partial def readback (p : PRen) (occ : Option Nat) (v : Val) : Except String Tm := do
@@ -612,6 +743,11 @@ partial def readback (p : PRen) (occ : Option Nat) (v : Val) : Except String Tm 
   | .glue tySys sys a => pure (.glue (← rbSysFlat tySys) (← rbSysFlat sys) (← rb a))
   | .unglue b sys => pure (.unglue (← rb b) (← rbSysFlat sys))
   | .prim n args => rbArgs (.prim n) args
+  | .split P env cases x =>
+    let cases' ← cases.mapM fun (c, names, body) => do
+      let (v, p') := instCase G p.cod env c body
+      pure (c, names, ← readback p' occ v)
+    pure (.split (← rb P) cases' (← rb x))
 
 /-- Read a value back into core syntax; `l` is the current context size. -/
 def quote (l : Nat) (v : Val) : Tm :=

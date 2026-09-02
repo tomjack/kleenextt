@@ -8,3 +8,4 @@ import Kleenextt.Frontend
 import Kleenextt.Examples
 import Kleenextt.Prelude
 import Kleenextt.Cubical
+import Kleenextt.Brunerie

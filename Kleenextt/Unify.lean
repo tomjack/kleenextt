@@ -115,6 +115,17 @@ mutual
       if n == n' && args.length == args'.length then
         for (a, a') in args.zip args' do unify l a a'
       else throw "unify: rigid mismatch"
+    | .split P env cs x, .split P' env' cs' x' =>
+      unify l P P'
+      unify l x x'
+      for (c, _, b) in cs do
+        match cs'.find? (·.1 == c) with
+        | none => throw "unify: case shapes differ"
+        | some (_, _, b') =>
+          let G ← get
+          let (v, p) := instCase G l env c b
+          let (v', _) := instCase G l env' c b'
+          unify p.cod v v'
     | _, _ => throw "unify: rigid mismatch"
 
   /-- `b = glue [φ ↦ b] (unglue b)`. -/

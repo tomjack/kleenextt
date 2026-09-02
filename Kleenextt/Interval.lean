@@ -208,19 +208,81 @@ def boolean : Alg Bool where
 Interval expressions in values are `IExpr`s over de Bruijn levels; the
 equational theory is the free Kleene algebra. -/
 
-/-- Equality in the free Kleene interval. -/
-def ieq (r s : IExpr) : Bool := kleene.decEqOn r s
+/-! ### Normal forms
+
+A clause is a sorted list of literals `(i, d)`; a clause may contain both
+polarities of a generator, since `i ∧ ¬i ≠ 0` in a Kleene algebra. Constants
+are propagated and absorption (`x ∨ (x ∧ y) = x`) is applied, which is valid
+in any lattice, so the normal form is a De Morgan normal form: it decides
+`r = 0` and `r = 1` and gives the faces on which `r = 1`, but two Kleene-equal
+expressions may still have different normal forms. -/
+
+abbrev Clause := List (Nat × Bool)
+
+namespace Clause
+
+private def litLt (l m : Nat × Bool) : Bool :=
+  l.1 < m.1 || (l.1 == m.1 && !l.2 && m.2)
+
+def insertLit (l : Nat × Bool) : Clause → Clause
+  | [] => [l]
+  | m :: c => if litLt l m then l :: m :: c else if l == m then m :: c else m :: insertLit l c
+
+def union (c d : Clause) : Clause := d.foldl (fun acc l => acc.insertLit l) c
+
+/-- `c` is at least as strong as `d`: it contains every literal of `d`. -/
+def implies (c d : Clause) : Bool := d.all c.contains
+
+def consistent (c : Clause) : Bool := !c.any fun (i, d) => c.contains (i, !d)
+
+end Clause
+
+/-- Drop duplicate clauses and clauses that imply another one. -/
+def absorb (cs : List Clause) : List Clause :=
+  let cs := cs.eraseDups
+  cs.filter fun c => !cs.any fun d => d != c && c.implies d
+
+private def product (cs ds : List Clause) : List Clause :=
+  absorb <| cs.flatMap fun c => ds.map fun d => c.union d
+
+/-- The DNF clauses of `r` (`neg = false`) or of `¬r` (`neg = true`). -/
+partial def dnf (r : IExpr) (neg : Bool) : List Clause :=
+  match r, neg with
+  | .zero, false | .one, true => []
+  | .zero, true | .one, false => [[]]
+  | .var i, b => [[(i, !b)]]
+  | .neg r, b => dnf r (!b)
+  | .meet r s, false | .join r s, true => product (dnf r neg) (dnf s neg)
+  | .meet r s, true | .join r s, false => absorb (dnf r neg ++ dnf s neg)
+
+private def ofClauses (cs : List Clause) : IExpr :=
+  let lit (l : Nat × Bool) : IExpr := if l.2 then .var l.1 else .neg (.var l.1)
+  let clause (c : Clause) : IExpr := match c.map lit with
+    | [] => .one
+    | l :: ls => ls.foldl .meet l
+  match cs.map clause with
+  | [] => .zero
+  | c :: cs => cs.foldl .join c
 
 namespace IExpr
 
-def isZero (r : IExpr) : Bool := ieq r zero
-def isOne (r : IExpr) : Bool := ieq r one
+def norm (r : IExpr) : IExpr := ofClauses (dnf r false)
+
+/-- Normal forms decide the constants outright. -/
+def isZero (r : IExpr) : Bool := (dnf r false).isEmpty
+def isOne (r : IExpr) : Bool := (dnf r false).any (·.isEmpty)
 
 /-- ABCFHL validity: the cofibration `r = 1` holds classically, so no closed
 instance of a system on `r` can be empty. -/
 def isValid (r : IExpr) : Bool := boolean.decEqOn r one
 
 end IExpr
+
+/-- Equality in the free Kleene interval: by normal form when possible,
+otherwise by evaluation into the three-element Kleene algebra. -/
+def ieq (r s : IExpr) : Bool :=
+  let (cr, cs) := (dnf r false, dnf s false)
+  cr == cs || kleene.decEqOn (ofClauses cr) (ofClauses cs)
 
 /-- A face: a partial assignment of generators to endpoints, sorted by
 generator and without repetition. -/
@@ -274,19 +336,11 @@ end Face
 /-- Keep only the maximal faces: drop any face that is at least as specific as
 another one in the list. -/
 def maximalFaces (fs : List Face) : List Face :=
-  let fs := fs.eraseDups
-  fs.filter fun α => !fs.any fun β => β != α && α.le β
+  absorb fs
 
-/-- The maximal faces on which `r = b`; cubicaltt's `invFormula`. -/
-partial def invFormula : IExpr → Bool → List Face
-  | .zero, b => if b then [] else [[]]
-  | .one, b => if b then [[]] else []
-  | .var i, b => [[(i, b)]]
-  | .neg r, b => invFormula r (!b)
-  | .meet r s, false => maximalFaces (invFormula r false ++ invFormula s false)
-  | .meet r s, true =>
-    maximalFaces <| (invFormula r true).flatMap fun α =>
-      (invFormula s true).filterMap fun β => α.meet β
-  | .join r s, b => invFormula (.meet (.neg r) (.neg s)) (!b)
+/-- The maximal faces on which `r = b`: the consistent clauses of the normal
+form of `r` (of `¬r` for `b = false`); cubicaltt's `invFormula`. -/
+def invFormula (r : IExpr) (b : Bool) : List Face :=
+  (dnf r (!b)).filter Clause.consistent
 
 end Kleenextt

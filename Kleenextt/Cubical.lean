@@ -36,7 +36,7 @@ kdef pathEnds : {A : Type} {x y : A} (p : Path A x y) → Path A x y := λ p i =
 #kconv (λ (A : Type) (x : A) => (λ (i : I) => ghcomp A (λ j => [ (i = 0) ↦ x ]) x) 1) = (λ A x => x)
 
 -- Booleans are a strict inductive type: transport and composition compute.
-kdef not : Bool → Bool := λ b => Bool.elim (λ _ => Bool) false true b
+kdef not : Bool → Bool := λ b => case b (λ _ => Bool) [ true ↦ false, false ↦ true ]
 #kconv not (not true) = true
 #kconv transport (λ _ => Bool) true = true
 #kconv (λ (i : I) => hcomp Bool (λ j => [ (i = 0) ↦ true, (i = 1) ↦ true ]) true) = (λ i => true)
@@ -44,7 +44,9 @@ kdef not : Bool → Bool := λ b => Bool.elim (λ _ => Bool) false true b
 -- The circle: `loop` is a path, and the eliminator computes on it.
 kdef loopPath : Path S1 base base := λ i => loop i
 #kconv loop 0 = base
-kdef helix : Equiv Bool Bool → S1 → Type := λ e => S1.elim (λ _ => Type) Bool (λ i => ua e i)
+kdef helix : Equiv Bool Bool → S1 → Type := λ e x => case x (λ _ => Type) [ base ↦ Bool, loop i ↦ ua e i ]
+-- A case that does not respect the boundary of `loop` is rejected.
+#kfail λ (e : Equiv Bool Bool) (x : S1) => case x (λ _ => Type) [ base ↦ Bool, loop i ↦ S1 ]
 #kconv (λ (e : Equiv Bool Bool) => helix e base) = (λ e => Bool)
 #kconv (λ (e : Equiv Bool Bool) (i : I) => helix e (loop i)) = (λ e i => ua e i)
 

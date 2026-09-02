@@ -35,19 +35,30 @@ initialize kBuiltinsExt : SimplePersistentEnvExtension String (List String) ←
     addImportedFn := fun xss => xss.flatten.toList
   }
 
-/-- The context with every `kdef` so far defined, and the globals with the
-registered builtins. -/
-def kCxt (defs : Array KDef) (builtins : List String) : Cxt × Globals :=
-  defs.foldl (init := ({}, {})) fun (cxt, G) d =>
-    let v := eval G cxt.lvl cxt.env d.tm
-    let G := if builtins.contains d.name && d.name == "lineToEquiv" then { G with lineToEquiv := some v } else G
-    (cxt.define d.name v (eval G cxt.lvl cxt.env d.ty), G)
+/-- Declared inductive types, most recent first. -/
+initialize kDatasExt : SimplePersistentEnvExtension DataInfo (List DataInfo) ←
+  registerSimplePersistentEnvExtension {
+    addEntryFn := fun xs x => x :: xs
+    addImportedFn := fun xss => xss.flatten.toList
+  }
+
+/-- The globals with every `kdef` so far defined (closed terms, evaluated in
+order), the registered builtins and the inductive types; the elaboration
+context itself is empty. -/
+def kCxt (defs : Array KDef) (builtins : List String) (datas : List DataInfo) : Cxt × Globals :=
+  let G := defs.foldl (init := { datas : Globals }) fun G d =>
+    let v := Thunk.mk fun _ => eval G 0 [] d.tm
+    let G := { G with defs := (d.name, v, eval G 0 [] d.ty) :: G.defs }
+    if builtins.contains d.name && d.name == "lineToEquiv" then { G with lineToEquiv := some v.get } else G
+  ({}, G)
 
 declare_syntax_cat kexpr
 declare_syntax_cat kbinder
 declare_syntax_cat kpibinder
 declare_syntax_cat kface
 declare_syntax_cat kentry
+declare_syntax_cat kcase
+declare_syntax_cat kcon
 
 syntax ident : kbinder
 syntax "_" : kbinder
@@ -61,9 +72,13 @@ syntax "{" ident+ "}" : kpibinder
 
 syntax "(" ident " = " num ")" : kface
 syntax kface+ " ↦ " kexpr : kentry
+syntax ident ident* " ↦ " kexpr : kcase
+syntax ident kpibinder* ("[" kentry,* "]")? : kcon
 
 syntax:max ident : kexpr
 syntax:max "Type" : kexpr
+syntax:max "sorry" : kexpr
+syntax:max "case " kexpr:max kexpr:max "[" kcase,* "]" : kexpr
 syntax:max "_" : kexpr
 syntax:max num : kexpr
 syntax:max "(" kexpr ")" : kexpr
@@ -109,6 +124,27 @@ private def piBinderToRaw (toRaw : TSyntax `kexpr → Except String Raw) :
     pure (xs.toList.map fun x => (x.getId.toString, .impl, .hole))
   | stx => throw s!"unsupported binder: {stx.raw.getKind}"
 
+/-- System entries `(i = 0)(j = 1) ↦ t`: the face as a conjunction of literals. -/
+private def entriesToRaw (toRaw : TSyntax `kexpr → Except String Raw)
+    (entries : List (TSyntax `kentry)) : Except String (List (Raw × Raw)) :=
+  entries.mapM fun (entry : TSyntax `kentry) => do
+    match entry with
+    | `(kentry| $faces:kface* ↦ $t) =>
+      let cofs ← faces.toList.mapM fun (face : TSyntax `kface) => do
+        match face with
+        | `(kface| ($x:ident = $d:num)) =>
+          let r := Raw.var x.getId.toString
+          match d.getNat with
+          | 1 => pure r
+          | 0 => pure (.ineg r)
+          | _ => throw "a face is (i = 0) or (i = 1)"
+        | _ => throw "unsupported face"
+      let φ := match cofs with
+        | [] => Raw.i1
+        | c :: cs => cs.foldl (fun acc c => .imeet acc c) c
+      pure (φ, ← toRaw t)
+    | _ => throw "unsupported system entry"
+
 /-- Split an application spine into its head and explicit arguments. -/
 private partial def spine (stx : TSyntax `kexpr) : TSyntax `kexpr × List (TSyntax `kexpr) :=
   match stx with
@@ -132,11 +168,25 @@ private def special (name : String) (args : List Raw) : Except String (Option Ra
     match r with
     | .lam i .expl a => pure (i, a)
     | _ => throw s!"{name}: expected λ i => A"
+  -- `coe r r' (λ i => A) u` and `hcom r r' A (λ l => […]) u` are the Cartesian
+  -- operations, expressed with connections: the direction `r → r'` is the
+  -- interpolation `l ↦ (¬l ∧ r) ∨ (l ∧ r') ∨ (r ∧ r')`, whose last disjunct
+  -- makes it constantly `r` when `r = r'`. The Cartesian law `r = r' ⇒ u₀`
+  -- is the face `(r = r')`, expressible only when one endpoint is a constant:
+  -- it is `coe`'s constancy cofibration and an extra side of `hcom`. With two
+  -- variable endpoints `hcom k k` does not reduce to its base.
+  let dir (r r' l : Raw) : Raw := .ijoin (.ijoin (.imeet (.ineg l) r) (.imeet l r')) (.imeet r r')
+  let eqCof (r r' : Raw) : Option Raw :=
+    match r, r' with
+    | .i0, s | s, .i0 => some (.ineg s)
+    | .i1, s | s, .i1 => some s
+    | _, _ => none
   let arity : Option Nat := match name with
     | "fst" | "snd" | "unglue" => some 1
     | "Glue" | "glue" => some 2
     | "transp" | "hcomp" | "ghcomp" | "comp" => some 3
-    | "hfill" => some 4
+    | "hfill" | "coe" => some 4
+    | "hcom" => some 5
     | _ => none
   match arity with
   | none => pure none
@@ -157,6 +207,19 @@ private def special (name : String) (args : List Raw) : Except String (Option Ra
         let (j, sys) ← boundSystem sys
         pure (Raw.comp i a j sys u)
       | "hfill", [a, sys, u, r] => do let (j, sys) ← boundSystem sys; pure (Raw.hfill a j sys u r)
+      | "coe", [r, r', a, u] => do
+        let (i, a) ← line a
+        let j := i ++ "'"
+        let some φ := eqCof r r' | throw "coe: one endpoint must be 0 or 1"
+        pure (Raw.transp (.lam j .expl (.letE i (.var "I") (dir r r' (.var j)) a)) φ u)
+      | "hcom", [r, r', a, sys, u] => do
+        let (l, sys) ← boundSystem sys
+        let l' := l ++ "'"
+        let sys := sys.map fun (φ, t) => (φ, Raw.letE l (.var "I") (dir r r' (.var l')) t)
+        let sys := match eqCof r r' with
+          | some φ => sys ++ [(φ, u)]
+          | none => sys
+        pure (Raw.hcomp false a l' sys u)
       | _, _ => throw s!"{name}: wrong number of arguments"
     pure (some (rest.foldl (fun f a => .app f a .expl) hd))
 
@@ -175,25 +238,15 @@ partial def toRaw : TSyntax `kexpr → Except String Raw
     match ts.reverse with
     | last :: rest => pure (rest.foldl (fun acc t => .pair t acc) last)
     | [] => throw "empty tuple"
-  | `(kexpr| [$entries,*]) => do
-    let sys ← entries.getElems.toList.mapM fun (entry : TSyntax `kentry) => do
-      match entry with
-      | `(kentry| $faces:kface* ↦ $t) =>
-        let cofs ← faces.toList.mapM fun (face : TSyntax `kface) => do
-          match face with
-          | `(kface| ($x:ident = $d:num)) =>
-            let r := Raw.var x.getId.toString
-            match d.getNat with
-            | 1 => pure r
-            | 0 => pure (.ineg r)
-            | _ => throw "a face is (r = 0) or (r = 1)"
-          | _ => throw "unsupported face"
-        let φ := match cofs with
-          | [] => Raw.i1
-          | c :: cs => cs.foldl (fun acc c => .imeet acc c) c
-        pure (φ, ← toRaw t)
-      | _ => throw "unsupported system entry"
-    pure (.system sys)
+  | `(kexpr| [$entries,*]) => do pure (.system (← entriesToRaw toRaw entries.getElems.toList))
+  | `(kexpr| sorry) => pure .sorry
+  | `(kexpr| case $x $P [$cs,*]) => do
+    let cases ← cs.getElems.toList.mapM fun (c : TSyntax `kcase) => do
+      match c with
+      | `(kcase| $con:ident $xs:ident* ↦ $t) =>
+        pure (con.getId.toString, xs.toList.map (·.getId.toString), ← toRaw t)
+      | _ => throw "unsupported case"
+    pure (.split (← toRaw x) (← toRaw P) cases)
   | stx@`(kexpr| $_ $_) => do
     let (hd, args) := spine stx
     let args ← args.mapM toRaw
@@ -235,7 +288,55 @@ private def orThrowAt [Monad m] [MonadError m] (ref : Syntax) : Except String α
 
 private def currentCxt : CommandElabM (Cxt × Globals) := do
   let env ← getEnv
-  pure (kCxt (kDefsExt.getState env) (kBuiltinsExt.getState env))
+  pure (kCxt (kDefsExt.getState env) (kBuiltinsExt.getState env) (kDatasExt.getState env))
+
+/-- `kdata D := c (x : A) … (i : I) … [ (i = 0) ↦ t, … ] | …`: a parameterless
+inductive type, higher if a constructor binds interval variables. Field
+types are checked in the context of the previous fields only (primitives
+and other inductive types are in scope, `kdef`s are not). -/
+elab "kdata " x:ident " := " cons:sepBy1(kcon, " | ") : command => do
+  let (_, G) ← currentCxt
+  let name := x.getId.toString
+  let mut d : DataInfo := { name, cons := [] }
+  for con in cons.getElems do
+    let (cname, binders, boundary) ← match con with
+      | `(kcon| $c:ident $bs:kpibinder* $[[$es,*]]?) => do
+        let bs ← orThrowAt con (bs.toList.mapM (piBinderToRaw toRaw))
+        let es := match es with
+          | some es => es.getElems.toList
+          | none => []
+        let es ← orThrowAt con (entriesToRaw toRaw es)
+        pure (c.getId.toString, bs.flatten, es)
+      | _ => throwErrorAt con "unsupported constructor"
+    let isI : Raw → Bool
+      | .var "I" => true
+      | _ => false
+    let fields := binders.takeWhile fun (_, _, a) => !isI a
+    let ivars := binders.drop fields.length
+    unless ivars.all (fun (_, _, a) => isI a) do
+      throwErrorAt con "interval binders must come after the fields"
+    let G' := { G with datas := d :: G.datas }
+    let r : Except String ConInfo := do
+      let (c, _) ← (do
+        let mut c : Cxt := {}
+        let mut fieldTms : List (String × Tm) := []
+        for (f, _, a) in fields do
+          let T ← check c a .univ
+          let vT ← evalC c T
+          c := c.bind f vT
+          fieldTms := fieldTms ++ [(f, T)]
+        for (i, _, _) in ivars do
+          c := c.bind i .interval
+        let (entries, _) ← checkFlatSys c boundary (.prim name [])
+        let G ← get
+        let entries ← entries.mapM fun (φ, t) => do pure (φ, ← zonk G c.env c.lvl t)
+        let fields ← fieldTms.mapM fun (f, T) => do pure (f, ← zonk G [] 0 T)
+        pure ({ name := cname, fields, ivars := ivars.map (·.1), boundary := entries } : ConInfo)
+        : ElabM ConInfo).run G'
+      pure c
+    let con ← orThrowAt con r
+    d := { d with cons := d.cons ++ [con] }
+  modifyEnv (kDatasExt.addEntry · d)
 
 elab "kdef " x:ident " : " a:kexpr " := " t:kexpr : command => do
   let (cxt, G) ← currentCxt

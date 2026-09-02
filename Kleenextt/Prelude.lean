@@ -6,6 +6,9 @@ the kernel uses for `hcomp` in the universe. -/
 
 namespace Kleenextt.Prelude
 
+kdata Bool := true | false
+kdata S1 := base | loop (i : I) [ (i = 0) ↦ base, (i = 1) ↦ base ]
+
 kdef refl : {A : Type} {x : A} → Path A x x := λ {A} {x} i => x
 kdef sym : {A : Type} {x y : A} → Path A x y → Path A y x := λ p i => p (¬ i)
 kdef ap : {A B : Type} (f : A → B) {x y : A} → Path A x y → Path B (f x) (f y) := λ f p i => f (p i)

@@ -44,6 +44,8 @@ inductive Raw where
   | glueTy (a : Raw) (sys : List (Raw × Raw))
   | glue (sys : List (Raw × Raw)) (a : Raw)
   | unglue (b : Raw)
+  | split (x P : Raw) (cases : List (String × List String × Raw))
+  | sorry
   deriving Repr, Inhabited
 
 /-- Whether a context entry is a bound variable or a `let`-definition; an
@@ -82,6 +84,11 @@ inductive Tm where
   | glue (tySys sys : List (IExpr × Tm)) (a : Tm)
   | unglue (b : Tm) (sys : List (IExpr × Tm))
   | prim (name : String)
+  /-- A top-level definition. -/
+  | top (name : String)
+  /-- Dependent case analysis: each case body binds the constructor's fields
+  and interval variables, last one at index 0. -/
+  | split (P : Tm) (cases : List (String × List String × Tm)) (x : Tm)
   deriving Repr, Inhabited
 
 namespace Tm
@@ -142,6 +149,12 @@ partial def pretty (p : Nat) (ns : List String) : Tm → String
   | glue _ sys a => par p 2 s!"glue {prettySysFlat ns sys} {pretty 3 ns a}"
   | unglue b _ => par p 2 s!"unglue {pretty 3 ns b}"
   | prim name => name
+  | top name => name
+  | split P cases x =>
+    let cs := cases.map fun (c, names, body) =>
+      let names := names.map (freshen ns)
+      s!"{" ".intercalate (c :: names)} ↦ {pretty 0 (names.reverse ++ ns) body}"
+    par p 2 s!"case {pretty 3 ns x} {pretty 3 ns P} [{", ".intercalate cs}]"
 where
   /-- A face as juxtaposed `(i = 0)`/`(i = 1)` atoms. -/
   prettyFace (ns : List String) : IExpr → String
