@@ -41,11 +41,14 @@ def define (cxt : Cxt) (x : String) (t a : Val) : Cxt where
   bds := .defined :: cxt.bds
   lvl := cxt.lvl + 1
 
-/-- Restrict to a face: the interval variables it fixes become constants. -/
+/-- Restrict to a face: the interval variables it fixes become constants,
+which fresh metavariables must not abstract over. -/
 def restrict (G : Globals) (cxt : Cxt) (α : Face) : Cxt :=
   { cxt with
     env := cxt.env.map (face G cxt.lvl α)
-    types := cxt.types.map fun (x, o, a) => (x, o, face G cxt.lvl α a) }
+    types := cxt.types.map fun (x, o, a) => (x, o, face G cxt.lvl α a)
+    bds := cxt.bds.zipWith (fun bd idx => if α.mentions (cxt.lvl - idx - 1) then .defined else bd)
+      (List.range cxt.bds.length) }
 
 def showVal (G : Globals) (cxt : Cxt) (v : Val) : String :=
   (quote G cxt.lvl v).pretty 0 cxt.names

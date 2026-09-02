@@ -19,12 +19,6 @@ kdef Ω3 : (A : Type) → A → Type := λ A x => Ω (Ω2 A x) refl
 
 kdef isProp : Type → Type := λ A => (a b : A) → Path A a b
 
--- `isProp→PathP`: the fillers of transport along `p` from both ends.
-kdef lemPropFam : (A : Type) (P : A → Type) (pP : (x : A) → isProp (P x)) (a0 a1 : A)
-  (p : Path A a0 a1) (b0 : P a0) (b1 : P a1) → PathP (λ i => P (p i)) b0 b1 :=
-  λ A P pP a0 a1 p b0 b1 i =>
-    pP (p i) (transp (λ j => P (p (i ∧ j))) (¬ i) b0) (transp (λ j => P (p (i ∨ ¬ j))) i b1) i
-
 kdef J : {A : Type} {a : A} (C : (x : A) → Path A a x → Type) (d : C a refl) {x : A} (p : Path A a x) → C x p :=
   λ {A} {a} C d {x} p => transp (λ i => C (p i) (λ j => p (i ∧ j))) 0 d
 
@@ -87,26 +81,29 @@ kdef constSquare : (A : Type) (a : A) (p : Path A a a) → PathP (λ i => Path A
 kdef rotLoop : (a : S1) → Path S1 a a := λ a => case a (λ a => Path S1 a a)
   [ base ↦ λ i => loop i, loop i ↦ λ j => constSquare S1 base (λ i => loop i) i j ]
 
--- Being an equivalence is a proposition (Cubical Agda's `isPropIsContr`).
-
-kdef isPropIsContr : (A : Type) → isProp (isContr A) := λ A c d j =>
-  (snd c (fst d) j,
-   λ y i => hcomp A (λ k => [ (i = 0) ↦ snd c (snd c (fst d) j) k, (i = 1) ↦ snd c y k,
-                              (j = 0) ↦ snd c (snd c y i) k, (j = 1) ↦ snd c (snd d y i) k ]) (fst c))
-
-kdef isPropPi : (A : Type) (B : A → Type) (pr : (x : A) → isProp (B x)) → isProp ((x : A) → B x) :=
-  λ A B pr f g i x => pr x (f x) (g x) i
-
-kdef isPropIsEquiv : (A B : Type) (f : A → B) → isProp (isEquiv f) :=
-  λ A B f => isPropPi B (λ y => isContr (fiber f y)) (λ y => isPropIsContr (fiber f y))
+-- Being an equivalence is a proposition: cubicaltt's `propIsEquivDirect`
+-- (`examples/equiv.ctt`), one composition over connections per fiber.
+kdef propIsEquivDirect : (A B : Type) (f : A → B) → isProp (isEquiv f) := λ A B f p q i y =>
+  let F : Type := fiber f y;
+  let p2 : (w : F) → Path F (fst (p y)) w := snd (p y);
+  let q2 : (w : F) → Path F (fst (q y)) w := snd (q y);
+  (p2 (fst (q y)) i,
+   λ w j => hcomp F (λ k => [ (i = 0) ↦ p2 w j, (i = 1) ↦ q2 w (j ∨ ¬ k), (j = 0) ↦ p2 (q2 w (¬ k)) i, (j = 1) ↦ w ])
+              (p2 w (i ∨ j)))
 
 -- Local-global looping.
 
 kdef Z : Type → Type := λ A => Ω (A → A) (λ x => x)
 
+-- One transport along the loop, corrected at `i = 1` by the contraction of
+-- `isEquiv id` onto `idIsEquiv` (`anyRotIsEquiv` in brunerie_james.ctt).
 kdef rotIsEquiv : (A : Type) (h : Z A) (i : I) → isEquiv (λ x => h i x) :=
-  λ A h i => lemPropFam (A → A) (λ f => isEquiv f) (isPropIsEquiv A A) (λ x => x) (λ x => x) (λ i x => h i x)
-    (snd (idEquiv A)) (snd (idEquiv A)) i
+  λ A h i =>
+    hcomp (isEquiv (λ x => h i x))
+      (λ k => [ (i = 0) ↦ snd (idEquiv A),
+                (i = 1) ↦ propIsEquivDirect A A (λ x => x) (snd (idEquiv A))
+                            (transp (λ i => isEquiv (λ x => h i x)) 0 (snd (idEquiv A))) (¬ k) ])
+      (transp (λ j => isEquiv (λ x => h (i ∧ j) x)) (¬ i) (snd (idEquiv A)))
 
 kdef rotEquiv : (A : Type) (h : Z A) → Path (Equiv A A) (idEquiv A) (idEquiv A) :=
   λ A h i => (λ x => h i x, rotIsEquiv A h i)
