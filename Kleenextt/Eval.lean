@@ -182,24 +182,27 @@ def evalI (env : Env) (r : IExpr) : IExpr :=
     | .i s => s
     | _ => panic! "evalI: not an interval variable").norm
 
-/-- Whether a value mentions the level `l` (as an interval variable). -/
-partial def Val.mentionsLvl (l : Nat) (v : Val) : Bool :=
-  let go := Val.mentionsLvl l
+/-- Whether a value mentions any of the levels `ls` as an interval variable;
+the support check that lets substitution skip untouched values. -/
+partial def Val.mentionsAny (ls : List Nat) (v : Val) : Bool :=
+  if ls.isEmpty then false else
+  let go := Val.mentionsAny ls
+  let goI (r : IExpr) : Bool := r.vars.any ls.contains
   let goClo : Closure → Bool
     | .mk env _ => env.any go
-  let goSys (sys : System Val) : Bool := sys.any fun (α, u) => α.mentions l || go u
+  let goSys (sys : System Val) : Bool := sys.any fun (α, u) => α.any (ls.contains ·.1) || go u
   match v with
   | .var _ | .univ | .interval => false
   | .flex _ sp => sp.any (go ·.1)
   | .lam _ _ c | .ilam _ c => goClo c
-  | .ibind l' body => l' != l && go body
+  | .ibind l' body => body.mentionsAny (ls.filter (· != l'))
   | .app t u _ | .pair t u => go t || go u
-  | .papp p r x y => go p || r.vars.contains l || go x || go y
-  | .i r => r.vars.contains l
+  | .papp p r x y => go p || goI r || go x || go y
+  | .i r => goI r
   | .pi _ _ a c | .sigma _ a c => go a || goClo c
   | .fst t | .snd t => go t
   | .pathP a x y => go a || go x || go y
-  | .transp a r u => go a || r.vars.contains l || go u
+  | .transp a r u => go a || goI r || go u
   | .hcomp a sys u => go a || goSys sys || go u
   | .glueTy a sys => go a || goSys sys
   | .glue tySys sys a => goSys tySys || goSys sys || go a
@@ -317,10 +320,12 @@ mutual
       (invFormula (evalI env φ) true).map fun δ =>
         (δ, eval L (env.map (act L δ.toSubst)) t)
 
-  /-- Interval substitution. `L` is the size of the target context. -/
+  /-- Interval substitution. `L` is the size of the target context. A value
+  outside the support of `σ` is returned as is. -/
   partial def act (L : Nat) (σ : Subst) (v : Val) : Val :=
     let actClo : Closure → Closure
       | .mk env t => .mk (env.map (act L σ)) t
+    if !v.mentionsAny (σ.map (·.1)) then v else
     match v with
     | .var l => .var l
     | .flex m sp => .flex m (sp.map fun (u, i) => (act L σ u, i))
