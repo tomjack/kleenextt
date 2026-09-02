@@ -13,10 +13,16 @@ univalence axiom", 2016. arXiv:1611.02108
 
 Two layers, `lake build` checks both.
 
-**MLTT kernel** (tiers 1/3 of NOTES.md): a port of elaboration-zoo's
-02-typecheck-closures-debruijn — core terms with de Bruijn indices, NbE with
-first-order closures and levels in values, beta-eta conversion, bidirectional
-check/infer, type-in-type. `Syntax.lean`, `Eval.lean`, `Check.lean`.
+**MLTT elaborator** (tiers 1/3 of NOTES.md): a port of elaboration-zoo's
+04-implicit-args — core terms with de Bruijn indices, NbE with first-order
+closures and levels in values, metavariables solved by pattern unification,
+bidirectional check/infer with Agda-style insertion of implicit arguments and
+lambdas (positional and named), type-in-type. `Syntax.lean`, `Eval.lean`,
+`Unify.lean`, `Check.lean`. The metavariable context is passed explicitly
+(a section variable) rather than kept in a global ref as in the zoo, and
+each top-level definition is zonked and must leave no unsolved metas. This is
+the §2.6 insertion of Kovács' ICFP 2020 paper only; the paper's first-class
+polymorphism (postponed insertion, zoo stage 06) is not implemented.
 
 **Lean as the surface language**: no string parser. `Frontend.lean` declares a
 `kexpr` syntax category (existing Lean tokens only) and commands — `kdef`,
