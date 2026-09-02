@@ -20,10 +20,12 @@ arguments in the smalltt/elaboration-zoo style.
 
 ## Open question: build in the validity constraint?
 
-Cofibrations are interval elements `r` (read `r = 1`), not face-lattice
-elements, so that `¬r` exists and `ghcomp` can be defined
-(see REFERENCES.md, "Empty systems"). Two ways to keep empty systems out
-of closed terms:
+System faces are conjunctions of `(i = 0)`/`(i = 1)` on variables, and a
+cofibration is its face normal form. `ghcomp` is currently Mörtberg's
+`hcomp [φ ↦ u, ¬φ ↦ u₀] u₀` with `¬φ` computed on the normal form;
+Angiuli's structural definition (cctt's `ghcomdn`) needs no negation at
+all and could replace it (see REFERENCES.md, "Empty systems"). Two ways
+to keep empty systems out of closed terms:
 
 - Enforce ABCFHL validity on every user `hcomp`: reject systems whose
   cofibration is not a classical tautology. Guarantees no empty systems,

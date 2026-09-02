@@ -7,7 +7,9 @@ Lean files through the `kexpr` syntax category, and the `kdef`/`#knf`/`#ktype`/
 elaboration time, so object-level type errors surface as ordinary Lean errors.
 Only existing Lean tokens are used, so the grammar reserves nothing new at the
 term level; the cubical primitives are ordinary identifiers that `toRaw`
-recognises at the head of an application. -/
+recognises at the head of an application. System faces are conjunctions of
+`(i = 0)`/`(i = 1)` on variables, written by juxtaposition as in cubicaltt;
+no other cofibrations can be written. -/
 
 namespace Kleenextt
 
@@ -57,7 +59,7 @@ syntax "(" ident+ " : " kexpr ")" : kpibinder
 syntax "{" ident+ " : " kexpr "}" : kpibinder
 syntax "{" ident+ "}" : kpibinder
 
-syntax "(" kexpr " = " num ")" : kface
+syntax "(" ident " = " num ")" : kface
 syntax kface+ " ↦ " kexpr : kentry
 
 syntax:max ident : kexpr
@@ -179,8 +181,8 @@ partial def toRaw : TSyntax `kexpr → Except String Raw
       | `(kentry| $faces:kface* ↦ $t) =>
         let cofs ← faces.toList.mapM fun (face : TSyntax `kface) => do
           match face with
-          | `(kface| ($r = $d:num)) =>
-            let r ← toRaw r
+          | `(kface| ($x:ident = $d:num)) =>
+            let r := Raw.var x.getId.toString
             match d.getNat with
             | 1 => pure r
             | 0 => pure (.ineg r)

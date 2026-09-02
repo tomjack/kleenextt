@@ -143,13 +143,19 @@ partial def pretty (p : Nat) (ns : List String) : Tm → String
   | unglue b _ => par p 2 s!"unglue {pretty 3 ns b}"
   | prim name => name
 where
+  /-- A face as juxtaposed `(i = 0)`/`(i = 1)` atoms. -/
+  prettyFace (ns : List String) : IExpr → String
+    | .var n => s!"({iname ns n} = 1)"
+    | .neg (.var n) => s!"({iname ns n} = 0)"
+    | .meet r s => prettyFace ns r ++ prettyFace ns s
+    | φ => s!"({(i φ).pretty 0 ns} = 1)"
   /-- A system whose components bind an interval variable. -/
   prettySys (ns : List String) (sys : List (IExpr × Tm)) : String :=
     let j := freshen ns "j"
-    let entries := sys.map fun (φ, t) => s!"({(i φ).pretty 0 ns} = 1) ↦ {pretty 0 (j :: ns) t}"
+    let entries := sys.map fun (φ, t) => s!"{prettyFace ns φ} ↦ {pretty 0 (j :: ns) t}"
     s!"(λ {j} => [{", ".intercalate entries}])"
   prettySysFlat (ns : List String) (sys : List (IExpr × Tm)) : String :=
-    let entries := sys.map fun (φ, t) => s!"({(i φ).pretty 0 ns} = 1) ↦ {pretty 0 ns t}"
+    let entries := sys.map fun (φ, t) => s!"{prettyFace ns φ} ↦ {pretty 0 ns t}"
     s!"[{", ".intercalate entries}]"
 
 end Tm

@@ -18,11 +18,12 @@ univalence axiom", 2016. arXiv:1611.02108
 equational theory of the free Kleene (and free De Morgan) interval by
 evaluation into the finite algebra generating the variety; `Tests.lean` pins
 the expected (in)equations at compile time. The kernel uses the Kleene
-theory for conversion of interval expressions. Cofibrations are interval
-elements `r` (read `r = 1`), decomposed into faces by cubicaltt's
-`invFormula`; the face decomposition is the same for the Kleene and
-De Morgan intervals. ABCFHL validity (`IExpr.isValid`) is available but not
-enforced (see NOTES.md).
+theory for conversion of interval expressions. System faces are
+conjunctions of `(i = 0)`/`(i = 1)` on variables, as in cubicaltt; a
+cofibration is represented by its face normal form (cubicaltt's
+`invFormula`), which is the same for the Kleene and De Morgan intervals.
+ABCFHL validity (`IExpr.isValid`) is available but not enforced (see
+NOTES.md).
 
 **Elaborator** (tiers 1/3): a port of elaboration-zoo's 04-implicit-args —
 core terms with de Bruijn indices, NbE with first-order closures and levels
@@ -61,7 +62,8 @@ elaborator at elaboration time, keeping checked definitions in an
 environment extension. The cubical primitives are ordinary identifiers
 recognised at the head of an application; systems are written
 `[ (i = 0) ↦ u, (i = 1) ↦ v ]`, and binding forms as `hcomp A (λ j => […]) u`,
-`transp (λ i => A) r u`, `comp (λ i => A) (λ i => […]) u`. Object-level
+`transp (λ i => A) r u`, `comp (λ i => A) (λ i => […]) u`; faces are
+`(i = 0)`/`(i = 1)` on variables, conjoined by juxtaposition. Object-level
 programs live in ordinary Lean files: `Examples.lean` (MLTT and implicits),
 `Prelude.lean` (paths, `ua`, `uaβ`, `lineToEquiv`), `Cubical.lean` (tests,
 including transport around the circle through univalence).

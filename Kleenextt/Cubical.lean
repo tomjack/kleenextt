@@ -29,10 +29,11 @@ kdef pathEnds : {A : Type} {x y : A} (p : Path A x y) → Path A x y := λ p i =
 #kconv (λ (A : Type) (x : A) (i : I) => hfill A (λ j => [ (i = 0) ↦ x ]) x 0) = (λ A x i => x)
 #kfail λ (A : Type) (x y : A) (p : Path A x y) (i : I) => hcomp A (λ j => [ (i = 0) ↦ y ]) (p i)
 
--- An empty system: `(i ∧ ¬i = 1)` has no faces. `hcomp` over it is stuck at
--- a neutral type; `ghcomp` reduces to the base (agda/agda#3415).
-#kdiffer (λ (A : Type) (x : A) (i : I) => hcomp A (λ j => [ (i ∧ ¬ i = 1) ↦ x ]) x) = (λ A x i => x)
-#kconv (λ (A : Type) (x : A) (i : I) => ghcomp A (λ j => [ (i ∧ ¬ i = 1) ↦ x ]) x) = (λ A x i => x)
+-- A system emptied by substitution: at `i = 1` the face `(i = 0)` vanishes.
+-- `hcomp` is then stuck at a neutral type; `ghcomp` reduces to the base
+-- (agda/agda#3415).
+#kdiffer (λ (A : Type) (x : A) => (λ (i : I) => hcomp A (λ j => [ (i = 0) ↦ x ]) x) 1) = (λ A x => x)
+#kconv (λ (A : Type) (x : A) => (λ (i : I) => ghcomp A (λ j => [ (i = 0) ↦ x ]) x) 1) = (λ A x => x)
 
 -- Booleans are a strict inductive type: transport and composition compute.
 kdef not : Bool → Bool := λ b => Bool.elim (λ _ => Bool) false true b
