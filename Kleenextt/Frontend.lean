@@ -28,13 +28,6 @@ initialize kDefsExt : SimplePersistentEnvExtension KDef (Array KDef) ←
     addImportedFn := Array.flatten
   }
 
-/-- Names of `kdef`s the kernel's computation rules refer to. -/
-initialize kBuiltinsExt : SimplePersistentEnvExtension String (List String) ←
-  registerSimplePersistentEnvExtension {
-    addEntryFn := fun xs x => x :: xs
-    addImportedFn := fun xss => xss.flatten.toList
-  }
-
 /-- Declared inductive types, most recent first. -/
 initialize kDatasExt : SimplePersistentEnvExtension DataInfo (List DataInfo) ←
   registerSimplePersistentEnvExtension {
@@ -43,13 +36,11 @@ initialize kDatasExt : SimplePersistentEnvExtension DataInfo (List DataInfo) ←
   }
 
 /-- The globals with every `kdef` so far defined (closed terms, evaluated in
-order), the registered builtins and the inductive types; the elaboration
-context itself is empty. -/
-def kCxt (defs : Array KDef) (builtins : List String) (datas : List DataInfo) : Cxt × Globals :=
+order) and the inductive types; the elaboration context itself is empty. -/
+def kCxt (defs : Array KDef) (datas : List DataInfo) : Cxt × Globals :=
   let G := defs.foldl (init := { datas : Globals }) fun G d =>
     let v := Thunk.mk fun _ => eval G 0 [] d.tm
-    let G := { G with defs := (d.name, v, eval G 0 [] d.ty) :: G.defs }
-    if builtins.contains d.name && d.name == "lineToEquiv" then { G with lineToEquiv := some v.get } else G
+    { G with defs := (d.name, v, eval G 0 [] d.ty) :: G.defs }
   ({}, G)
 
 declare_syntax_cat kexpr
@@ -288,7 +279,7 @@ private def orThrowAt [Monad m] [MonadError m] (ref : Syntax) : Except String α
 
 private def currentCxt : CommandElabM (Cxt × Globals) := do
   let env ← getEnv
-  pure (kCxt (kDefsExt.getState env) (kBuiltinsExt.getState env) (kDatasExt.getState env))
+  pure (kCxt (kDefsExt.getState env) (kDatasExt.getState env))
 
 /-- `kdata D := c (x : A) … (i : I) … [ (i = 0) ↦ t, … ] | …`: a parameterless
 inductive type, higher if a constructor binds interval variables. Field
@@ -349,13 +340,6 @@ elab "kdef " x:ident " : " a:kexpr " := " t:kexpr : command => do
     pure (← zonk G cxt.env cxt.lvl ty, ← zonk G cxt.env cxt.lvl tm)
   let (ty, tm) ← orThrowAt x r
   modifyEnv (kDefsExt.addEntry · { name := x.getId.toString, ty, tm })
-
-/-- Register a `kdef` the kernel's computation rules refer to. -/
-elab "#kbuiltin " x:ident : command => do
-  let defs := kDefsExt.getState (← getEnv)
-  unless defs.any (·.name == x.getId.toString) do
-    throwErrorAt x "not a kdef"
-  modifyEnv (kBuiltinsExt.addEntry · x.getId.toString)
 
 elab tk:"#knf " e:kexpr : command => do
   let (cxt, G) ← currentCxt

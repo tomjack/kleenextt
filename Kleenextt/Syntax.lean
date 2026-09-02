@@ -83,6 +83,11 @@ inductive Tm where
   | glueTy (a : Tm) (sys : List (IExpr × Tm))
   | glue (tySys sys : List (IExpr × Tm)) (a : Tm)
   | unglue (b : Tm) (sys : List (IExpr × Tm))
+  /-- Elements of a composition in the universe `hcomp Type [φ ↦ E] A`:
+  `glueU [φ ↦ E] [φ ↦ t] a` with `t : E 1` and `a : A` transporting to `t`
+  backwards along `E`; only produced by evaluation. -/
+  | glueU (tySys us : List (IExpr × Tm)) (a : Tm)
+  | unglueU (b : Tm) (sys : List (IExpr × Tm))
   | prim (name : String)
   /-- A top-level definition. -/
   | top (name : String)
@@ -148,6 +153,8 @@ partial def pretty (p : Nat) (ns : List String) : Tm → String
   | glueTy a sys => par p 2 s!"Glue {pretty 3 ns a} {prettySysFlat ns sys}"
   | glue _ sys a => par p 2 s!"glue {prettySysFlat ns sys} {pretty 3 ns a}"
   | unglue b _ => par p 2 s!"unglue {pretty 3 ns b}"
+  | glueU _ us a => par p 2 s!"glueU {prettySysFlat ns us} {pretty 3 ns a}"
+  | unglueU b _ => par p 2 s!"unglueU {pretty 3 ns b}"
   | prim name => name
   | top name => name
   | split P cases x =>

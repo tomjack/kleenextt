@@ -4,14 +4,15 @@ import Kleenextt.Syntax
 
 Interval variables share the level space with ordinary variables. A value
 lives in a context of some size `L`, mentions only levels below `L`, and may
-be used in any larger context. Semantic interval binders (`ibind l body`)
-record the level `l` of the bound variable; instantiating one substitutes for
-that level. Interval substitution (`act`) is eager and re-runs the
-computation rules on neutral forms, since substitution can unblock them.
+be used in any larger context. Semantic interval binders (`line`) are
+functions of the context size and the interval argument, so instantiating
+one evaluates its body at that argument rather than substituting into an
+open body, as a closure does. Interval substitution (`act`) is eager on
+first-order values and re-runs the computation rules on neutral forms,
+since substitution can unblock them; on a `line` it is deferred.
 
 Every semantic operation takes the current context size `L`, which is the
-fresh-level supply: an operation that binds an interval variable uses `L` for
-it and computes the body at `L + 1`. -/
+fresh-level supply. -/
 
 namespace Kleenextt
 
@@ -25,7 +26,9 @@ mutual
     | flex (m : Nat) (sp : List (Val × Icit))
     | lam (x : String) (i : Icit) (c : Closure)
     | ilam (x : String) (c : Closure)
-    | ibind (l : Nat) (body : Val)
+    /-- A semantic line: the body at a fresh variable of level `l`, computed
+    at most once; instantiation substitutes for `l`. -/
+    | line (l : Nat) (body : Thunk Val)
     | app (t u : Val) (i : Icit)
     | papp (p : Val) (r : IExpr) (x y : Val)
     | univ
@@ -42,6 +45,11 @@ mutual
     | glueTy (a : Val) (sys : List (Face × Val))
     | glue (tySys sys : List (Face × Val)) (a : Val)
     | unglue (b : Val) (sys : List (Face × Val))
+    /-- `hcomp Type [φ ↦ E] A`: a type former of its own, with elements
+    `glueU`, so that transport along it never builds an equivalence. -/
+    | hcompU (a : Val) (sys : List (Face × Val))
+    | glueU (tySys us : List (Face × Val)) (a : Val)
+    | unglueU (b : Val) (sys : List (Face × Val))
     | prim (name : String) (args : List Val)
     | split (P : Val) (env : List Val) (cases : List (String × List String × Tm)) (x : Val)
 
@@ -81,13 +89,10 @@ structure DataInfo where
 def DataInfo.hit (d : DataInfo) : Bool :=
   d.cons.any (!·.ivars.isEmpty)
 
-/-- Metavariables (numbered densely in creation order), the object-level
-definitions the kernel's computation rules refer to, and the declared
-inductive types. -/
+/-- Metavariables (numbered densely in creation order), the declared
+inductive types, and the top-level definitions. -/
 structure Globals where
   metas : Array MetaEntry := #[]
-  /-- `(E : I → Type) → Equiv (E 1) (E 0)`; `hcomp` in the universe needs it. -/
-  lineToEquiv : Option Val := none
   datas : List DataInfo := []
   /-- Top-level definitions: name, value, type. Closed values, kept out of
   environments so that substitution never traverses them, and computed only
@@ -138,6 +143,14 @@ def System.cof (sys : System Val) : IExpr :=
 def System.total? (sys : System Val) : Option Val :=
   (sys.find? (·.1.isEmpty)).map (·.2)
 
+/-- A line in context `L`, from its body as a function of the context size
+and the bound variable. -/
+def mkLine (L : Nat) (f : Nat → IExpr → Val) : Val :=
+  .line L (Thunk.mk fun _ => f (L + 1) (.var L))
+
+/-- A constant line. -/
+def constLine (L : Nat) (v : Val) : Val := .line L (Thunk.pure v)
+
 /-! ## Templates
 
 Closed object-level definitions the computation rules unfold. -/
@@ -182,8 +195,9 @@ def evalI (env : Env) (r : IExpr) : IExpr :=
     | .i s => s
     | _ => panic! "evalI: not an interval variable").norm
 
-/-- Whether a value mentions any of the levels `ls` as an interval variable;
-the support check that lets substitution skip untouched values. -/
+/-- Whether a value may mention any of the levels `ls` as an interval
+variable; the support check that lets substitution skip untouched values.
+Conservative on lines. -/
 partial def Val.mentionsAny (ls : List Nat) (v : Val) : Bool :=
   if ls.isEmpty then false else
   let go := Val.mentionsAny ls
@@ -195,7 +209,7 @@ partial def Val.mentionsAny (ls : List Nat) (v : Val) : Bool :=
   | .var _ | .univ | .interval => false
   | .flex _ sp => sp.any (go ·.1)
   | .lam _ _ c | .ilam _ c => goClo c
-  | .ibind l' body => body.mentionsAny (ls.filter (· != l'))
+  | .line _ _ => true
   | .app t u _ | .pair t u => go t || go u
   | .papp p r x y => go p || goI r || go x || go y
   | .i r => goI r
@@ -207,6 +221,9 @@ partial def Val.mentionsAny (ls : List Nat) (v : Val) : Bool :=
   | .glueTy a sys => go a || goSys sys
   | .glue tySys sys a => goSys tySys || goSys sys || go a
   | .unglue b sys => go b || goSys sys
+  | .hcompU a sys => go a || goSys sys
+  | .glueU tySys us a => goSys tySys || goSys us || go a
+  | .unglueU b sys => go b || goSys sys
   | .prim _ args => args.any go
   | .split P env _ x => go P || env.any go || go x
 
@@ -223,17 +240,17 @@ mutual
     match f with
     | .ilam _ c => c.apply L (.i r)
     | .lam _ _ c => c.apply L (.i r)
-    | .ibind l body => act L [(l, r)] body
+    | .line l body => act L [(l, r)] body.get
     | f => vApp L f (.i r) .expl
 
   partial def vApp (L : Nat) (t u : Val) (i : Icit) : Val :=
     match t with
     | .lam _ _ c => c.apply L u
     | .ilam _ c => c.apply L u
-    | .ibind l body =>
+    | .line l body =>
       match u with
-      | .i r => act L [(l, r)] body
-      | _ => panic! "vApp: interval binder applied to a non-interval"
+      | .i r => act L [(l, r)] body.get
+      | _ => panic! "vApp: line applied to a non-interval"
     | .flex m sp => .flex m ((u, i) :: sp)
     | .transp a r f => transpApp L a r f u i
     | .hcomp a sys f => hcompApp L a sys f u i
@@ -258,7 +275,7 @@ mutual
     else match p with
     | .ilam _ c => c.apply L (.i r)
     | .lam _ _ c => c.apply L (.i r)
-    | .ibind l body => act L [(l, r)] body
+    | .line l body => act L [(l, r)] body.get
     | .flex m sp => .flex m ((.i r, .expl) :: sp)
     | p => .papp p r x y
 
@@ -301,6 +318,8 @@ mutual
     | .glueTy a sys => glueTy' (eval L env a) (evalSysFlat L env sys)
     | .glue tySys sys a => glue' (evalSysFlat L env tySys) (evalSysFlat L env sys) (eval L env a)
     | .unglue b sys => unglue' L (eval L env b) (evalSysFlat L env sys)
+    | .glueU tySys us a => glueU' (evalSys L env tySys) (evalSysFlat L env us) (eval L env a)
+    | .unglueU b sys => unglueU' L (eval L env b) (evalSys L env sys)
     | .prim n => prim' L n []
     | .top n =>
       match G.def? n with
@@ -321,7 +340,8 @@ mutual
         (δ, eval L (env.map (act L δ.toSubst)) t)
 
   /-- Interval substitution. `L` is the size of the target context. A value
-  outside the support of `σ` is returned as is. -/
+  outside the support of `σ` is returned as is; on a line the substitution
+  is deferred to instantiation. -/
   partial def act (L : Nat) (σ : Subst) (v : Val) : Val :=
     let actClo : Closure → Closure
       | .mk env t => .mk (env.map (act L σ)) t
@@ -331,7 +351,7 @@ mutual
     | .flex m sp => .flex m (sp.map fun (u, i) => (act L σ u, i))
     | .lam x i c => .lam x i (actClo c)
     | .ilam x c => .ilam x (actClo c)
-    | .ibind l body => .ibind L (act (L + 1) ((l, .var L) :: σ) body)
+    | .line l body => .line L (Thunk.mk fun _ => act (L + 1) ((l, .var L) :: σ) body.get)
     | .app t u i => vApp L (act L σ t) (act L σ u) i
     | .papp p r x y => papp' L (act L σ p) (σ.apply r) (act L σ x) (act L σ y)
     | .univ => .univ
@@ -348,6 +368,9 @@ mutual
     | .glueTy a sys => glueTy' (act L σ a) (actSys L σ sys)
     | .glue tySys sys a => glue' (actSys L σ tySys) (actSys L σ sys) (act L σ a)
     | .unglue b sys => unglue' L (act L σ b) (actSys L σ sys)
+    | .hcompU a sys => hcompU' L (act L σ a) (actSys L σ sys)
+    | .glueU tySys us a => glueU' (actSys L σ tySys) (actSys L σ us) (act L σ a)
+    | .unglueU b sys => unglueU' L (act L σ b) (actSys L σ sys)
     | .prim n args => prim' L n (args.map (act L σ))
     | .split P env cases x => splitApp L (act L σ P) (env.map (act L σ)) cases (act L σ x)
 
@@ -406,10 +429,9 @@ mutual
       | some d =>
         if d.hit then
           let fill := hfill' L (.prim D []) sys u
-          let pline := .ibind L (vApp (L + 1) P (lineApp (L + 1) fill (.var L)) .expl)
+          let pline := mkLine L fun L1 j => vApp L1 P (lineApp L1 fill j) .expl
           let sides := sys.map fun (α, s) =>
-            (α, .ibind L (splitApp (L + 1) (face (L + 1) α P) (env.map (face (L + 1) α)) cases
-              (lineApp (L + 1) s (.var L))))
+            (α, mkLine L fun L1 j => splitApp L1 (face L1 α P) (env.map (face L1 α)) cases (lineApp L1 s j))
           comp' L pline (mkSystem sides) (splitApp L P env cases u) false
         else .split P env cases x
       | none => .split P env cases x
@@ -422,14 +444,12 @@ mutual
     | .prim c args =>
       match G.con? c with
       | some (_, con) =>
-        let sideArgs := sys.map fun (α, s) =>
+        let sameCon := sys.all fun (_, s) =>
           match lineApp (L + 1) s (.var L) with
-          | .prim c' args' => if c' == c && args'.length == args.length then (α, some args') else (α, none)
-          | _ => (α, none)
-        if args.length != con.fields.length || sideArgs.any (·.2.isNone) then .hcomp A sys u
-        else
-          let sideArgs := sideArgs.map fun (α, as) => (α, as.getD [])
-          .prim c (hcompFields L 0 con.fields [] sideArgs args)
+          | .prim c' args' => c' == c && args'.length == args.length
+          | _ => false
+        if args.length != con.fields.length || !sameCon then .hcomp A sys u
+        else .prim c (hcompFields L 0 con.fields [] sys args)
       | none => .hcomp A sys u
     | _ => .hcomp A sys u
 
@@ -437,96 +457,118 @@ mutual
   the previous fields, most recent first, which the next field's type may
   depend on. -/
   partial def hcompFields (L : Nat) (k : Nat) (fields : List (String × Tm)) (fills : List Val)
-      (sideArgs : List (Face × List Val)) (args : List Val) : List Val :=
+      (sys : System Val) (args : List Val) : List Val :=
     match fields with
     | [] => []
     | (_, T) :: rest =>
-      let tline := .ibind L (eval (L + 1) (fills.map fun f => lineApp (L + 1) f (.var L)) T)
-      let sysk := sideArgs.map fun (α, as) => (α, .ibind L (as.getD k default))
+      let tline := mkLine L fun L1 j => eval L1 (fills.map fun f => lineApp L1 f j) T
+      let sysk := sys.map fun (α, s) => (α, mkLine L fun L1 j =>
+        match lineApp L1 s j with
+        | .prim _ as => as.getD k default
+        | _ => panic! "hcomp: side is not a constructor")
       let uk := args.getD k default
       let vk := comp' L tline sysk uk false
       let fk := compFill' L tline sysk uk
-      vk :: hcompFields L (k + 1) rest (fk :: fills) sideArgs args
+      vk :: hcompFields L (k + 1) rest (fk :: fills) sys args
 
   /-- The filler of a heterogeneous composition, as a line. -/
   partial def compFill' (L : Nat) (a : Val) (sys : System Val) (u0 : Val) : Val :=
-    let diag := IExpr.meet (.var L) (.var (L + 1))
-    let sides := sys.map fun (α, s) => (α, .ibind (L + 1) (lineApp (L + 2) s diag))
-    .ibind L (comp' (L + 1) (.ibind (L + 1) (lineApp (L + 2) a diag))
-      (mkSystem (sides ++ [([(L, false)], .ibind (L + 1) u0)])) u0 false)
+    mkLine L fun L1 j =>
+      let sides := sys.map fun (α, s) => (α, mkLine L1 fun L2 k => lineApp L2 s (.meet j k))
+      let start := (invFormula (.neg j) true).map fun δ => (δ, mkLine L1 fun L2 _ => face L2 δ u0)
+      comp' L1 (mkLine L1 fun L2 k => lineApp L2 a (.meet j k)) (mkSystem (sides ++ start)) u0 false
 
   /-- `transp^i A r u`, with `A` a line; identity when `r = 1`. -/
   partial def transp' (L : Nat) (a : Val) (r : IExpr) (u : Val) : Val :=
     if r.isOne then u else
     match lineApp (L + 1) a (.var L) with
     | .pi .. => .transp a r u
-    | .sigma _ A c =>
-      let aline := .ibind L A
+    | .sigma .. =>
+      let aline := mkLine L fun L1 i =>
+        match lineApp L1 a i with
+        | .sigma _ A _ => A
+        | _ => panic! "transp: line is not constantly a pair type"
       let v1 := transp' L aline r (vFst u)
       let fill := transpFill L aline r (vFst u)
-      let bline := .ibind L (c.apply (L + 1) (lineApp (L + 1) fill (.var L)))
+      let bline := mkLine L fun L1 i =>
+        match lineApp L1 a i with
+        | .sigma _ _ c => c.apply L1 (lineApp L1 fill i)
+        | _ => panic! "transp: line is not constantly a pair type"
       .pair v1 (transp' L bline r (vSnd u))
     | .pathP .. =>
-      let k := IExpr.var L
       let (x0, y0) := match lineApp L a .zero with
         | .pathP _ x y => (x, y)
         | _ => panic! "transp: line is not constantly a path type"
-      let body := match lineApp (L + 2) a (.var (L + 1)) with
-        | .pathP A' x' y' =>
-          let aline := .ibind (L + 1) (lineApp (L + 2) A' k)
-          let base := papp' (L + 1) u k x0 y0
-          let sides := (invFormula r true).map (fun δ => (δ, .ibind (L + 1) (face (L + 2) δ base)))
-            ++ [([(L, false)], .ibind (L + 1) x'), ([(L, true)], .ibind (L + 1) y')]
-          comp' (L + 1) aline (mkSystem sides) base false
+      let at_ (L1 : Nat) (i : IExpr) : Val × Val × Val :=
+        match lineApp L1 a i with
+        | .pathP A x y => (A, x, y)
         | _ => panic! "transp: line is not constantly a path type"
-      .ibind L body
+      mkLine L fun L1 k =>
+        let aline := mkLine L1 fun L2 i => lineApp L2 (at_ L2 i).1 k
+        let base := papp' L1 u k x0 y0
+        let sides := (invFormula r true).map (fun δ => (δ, mkLine L1 fun L2 _ => face L2 δ base))
+          ++ (invFormula (.neg k) true).map (fun δ => (δ, mkLine L1 fun L2 i => face L2 δ (at_ L2 i).2.1))
+          ++ (invFormula k true).map (fun δ => (δ, mkLine L1 fun L2 i => face L2 δ (at_ L2 i).2.2))
+        comp' L1 aline (mkSystem sides) base false
     | .univ => u
     | .prim n [] => if (G.data? n).isSome then u else .transp a r u
     | .glueTy A sysG => transpGlue L r u A sysG
+    | .hcompU A sysE => transpHU L r u A sysE
     | _ => .transp a r u
 
   /-- `transp` at a function type, applied: `(transp^i ((x : A) → B) r f) v`. -/
   partial def transpApp (L : Nat) (a : Val) (r : IExpr) (f u : Val) (i : Icit) : Val :=
+    let cod (L1 : Nat) (i' : IExpr) (x : Val) : Val :=
+      match lineApp L1 a i' with
+      | .pi _ _ _ c => c.apply L1 x
+      | _ => panic! "transp: line is not constantly a function type"
     match lineApp (L + 1) a (.var L) with
-    | .pi _ _ .interval c =>
-      transp' L (.ibind L (c.apply (L + 1) u)) r (vApp L f u i)
-    | .pi _ _ dom c =>
-      let domNeg := .ibind L (act (L + 1) [(L, .neg (.var L))] dom)
+    | .pi _ _ .interval _ =>
+      transp' L (mkLine L fun L1 i' => cod L1 i' u) r (vApp L f u i)
+    | .pi .. =>
+      let domNeg := mkLine L fun L1 i' =>
+        match lineApp L1 a (.neg i') with
+        | .pi _ _ dom _ => dom
+        | _ => panic! "transp: line is not constantly a function type"
       let w := transpFill L domNeg r u
-      let vline := .ibind L (lineApp (L + 1) w (.neg (.var L)))
+      let vline := mkLine L fun L1 i' => lineApp L1 w (.neg i')
       let v0 := lineApp L vline .zero
-      transp' L (.ibind L (c.apply (L + 1) (lineApp (L + 1) vline (.var L)))) r (vApp L f v0 i)
+      transp' L (mkLine L fun L1 i' => cod L1 i' (lineApp L1 vline i')) r (vApp L f v0 i)
     | _ => .app (.transp a r f) u i
 
   /-- The filler `Transp^i A r u`: a line from `u` to `transp^i A r u`. -/
   partial def transpFill (L : Nat) (a : Val) (r : IExpr) (u : Val) : Val :=
-    .ibind L (transp' (L + 1)
-      (.ibind (L + 1) (lineApp (L + 2) a (.meet (.var L) (.var (L + 1)))))
-      (.join r (.neg (.var L))) u)
+    mkLine L fun L1 i => transp' L1 (mkLine L1 fun L2 k => lineApp L2 a (.meet i k)) (.join r (.neg i)) u
 
   /-- Transport from `A r` to `A 1`; the identity when `r = 1`. -/
   partial def forward (L : Nat) (a : Val) (r : IExpr) (u : Val) : Val :=
-    transp' L (.ibind L (lineApp (L + 1) a (.join (.var L) r))) r u
+    transp' L (mkLine L fun L1 i => lineApp L1 a (.join i r)) r u
 
   /-- Heterogeneous composition, derived: `comp^i A [φ ↦ u] u₀ =
   hcomp^i (A 1) [φ ↦ forward A i (u i)] (forward A 0 u₀)`, with `ghcomp`
   in place of `hcomp` when `general`. -/
   partial def comp' (L : Nat) (a : Val) (sys : System Val) (u0 : Val) (general : Bool) : Val :=
     let sides := sys.map fun (α, s) =>
-      (α, .ibind L (forward (L + 1) (face (L + 1) α a) (.var L) (lineApp (L + 1) s (.var L))))
+      (α, mkLine L fun L1 i => forward L1 (face L1 α a) i (lineApp L1 s i))
     let base := forward L a .zero u0
     if general then ghcomp' L (lineApp L a .one) (mkSystem sides) base
     else hcomp' L (lineApp L a .one) (mkSystem sides) base
 
   /-- `ghcomp A [φ ↦ u] u₀ = hcomp A [φ ↦ u, ¬φ ↦ u₀] u₀`. -/
   partial def ghcomp' (L : Nat) (A : Val) (sys : System Val) (u : Val) : Val :=
-    let extra := (invFormula sys.cof false).map fun β => (β, .ibind L (face (L + 1) β u))
+    let extra := (invFormula sys.cof false).map fun β => (β, mkLine L fun L1 _ => face L1 β u)
     hcomp' L A (mkSystem (sys ++ extra)) u
 
   partial def hfill' (L : Nat) (A : Val) (sys : System Val) (u : Val) : Val :=
-    let sides := sys.map fun (α, s) =>
-      (α, .ibind (L + 1) (lineApp (L + 2) s (.meet (.var L) (.var (L + 1)))))
-    .ibind L (hcomp' (L + 1) A (mkSystem (sides ++ [([(L, false)], .ibind (L + 1) u)])) u)
+    mkLine L fun L1 j =>
+      let sides := sys.map fun (α, s) => (α, mkLine L1 fun L2 k => lineApp L2 s (.meet j k))
+      let start := (invFormula (.neg j) true).map fun δ => (δ, mkLine L1 fun L2 _ => face L2 δ u)
+      hcomp' L1 A (mkSystem (sides ++ start)) u
+
+  /-- The filler of `ghcomp`: `hfill` with the `¬φ ↦ u` sides. -/
+  partial def ghfill' (L : Nat) (A : Val) (sys : System Val) (u : Val) : Val :=
+    let extra := (invFormula sys.cof false).map fun β => (β, mkLine L fun L1 _ => face L1 β u)
+    hfill' L A (mkSystem (sys ++ extra)) u
 
   partial def hcomp' (L : Nat) (A : Val) (sys : System Val) (u : Val) : Val :=
     match sys.total? with
@@ -535,24 +577,23 @@ mutual
     match A with
     | .pi .. => .hcomp A sys u
     | .sigma _ a c =>
-      let sys1 := sys.map fun (α, s) => (α, .ibind L (vFst (lineApp (L + 1) s (.var L))))
-      let sys2 := sys.map fun (α, s) => (α, .ibind L (vSnd (lineApp (L + 1) s (.var L))))
+      let sys1 := sys.map fun (α, s) => (α, mkLine L fun L1 j => vFst (lineApp L1 s j))
+      let sys2 := sys.map fun (α, s) => (α, mkLine L fun L1 j => vSnd (lineApp L1 s j))
       let u1 := vFst u
       let v1 := hcomp' L a sys1 u1
       let fill1 := hfill' L a sys1 u1
-      let bline := .ibind L (c.apply (L + 1) (lineApp (L + 1) fill1 (.var L)))
+      let bline := mkLine L fun L1 j => c.apply L1 (lineApp L1 fill1 j)
       .pair v1 (comp' L bline sys2 (vSnd u) false)
     | .pathP a x y =>
-      let k := IExpr.var L
-      let body :=
+      mkLine L fun L1 k =>
         let sides := sys.map (fun (α, s) =>
-            (α, .ibind (L + 1) (papp' (L + 2) (lineApp (L + 2) s (.var (L + 1))) k
-              (face (L + 2) α x) (face (L + 2) α y))))
-          ++ [([(L, false)], .ibind (L + 1) x), ([(L, true)], .ibind (L + 1) y)]
-        hcomp' (L + 1) (lineApp (L + 1) a k) (mkSystem sides) (papp' (L + 1) u k x y)
-      .ibind L body
-    | .univ => hcompU L sys u
+            (α, mkLine L1 fun L2 j => papp' L2 (lineApp L2 s j) k (face L2 α x) (face L2 α y)))
+          ++ (invFormula (.neg k) true).map (fun δ => (δ, mkLine L1 fun L2 _ => face L2 δ x))
+          ++ (invFormula k true).map (fun δ => (δ, mkLine L1 fun L2 _ => face L2 δ y))
+        hcomp' L1 (lineApp L1 a k) (mkSystem sides) (papp' L1 u k x y)
+    | .univ => hcompU' L u sys
     | .glueTy B sysG => hcompGlue L B sysG sys u
+    | .hcompU B sysE => hcompHU L B sysE sys u
     | .prim n [] =>
       match G.data? n with
       | some d => if d.hit then .hcomp A sys u else hcompData L A sys u
@@ -564,17 +605,122 @@ mutual
     match A with
     | .pi _ _ _ c =>
       let sides := sys.map fun (α, s) =>
-        (α, .ibind L (vApp (L + 1) (lineApp (L + 1) s (.var L)) (face (L + 1) α u) i))
+        (α, mkLine L fun L1 j => vApp L1 (lineApp L1 s j) (face L1 α u) i)
       hcomp' L (c.apply L u) (mkSystem sides) (vApp L f u i)
     | _ => .app (.hcomp A sys f) u i
 
-  /-- `hcomp` in the universe is a `Glue` type along the transport
-  equivalences of the sides. -/
-  partial def hcompU (L : Nat) (sys : System Val) (u : Val) : Val :=
-    match G.lineToEquiv with
-    | some lte =>
-      glueTy' u (sys.map fun (α, s) => (α, .pair (lineApp L s .one) (vApp L lte s .expl)))
-    | none => .hcomp .univ sys u
+  -- Composition in the universe: `hcomp Type [φ ↦ E] A` is a type former
+  -- (cubicaltt's `VCompU`). Its elements are `glueU [φ ↦ E] [φ ↦ t] a` with
+  -- `a : A` and `t : E 1` such that `a` is the transport of `t` backwards
+  -- along `E`; that transport is the implicit equivalence `E 1 → A`, and
+  -- `lemEq` provides the contractibility of its fibers semantically.
+
+  partial def hcompU' (L : Nat) (A : Val) (sys : System Val) : Val :=
+    match sys.total? with
+    | some E => lineApp L E .one
+    | none => .hcompU A sys
+
+  partial def glueU' (tySys us : System Val) (a : Val) : Val :=
+    match us.total? with
+    | some t => t
+    | none => .glueU tySys us a
+
+  /-- Transport backwards along a line of types, `E 1 → E 0`. -/
+  partial def eqFun (L : Nat) (E t : Val) : Val :=
+    transp' L (mkLine L fun L1 i => lineApp L1 E (.neg i)) .zero t
+
+  partial def unglueU' (L : Nat) (b : Val) (sys : System Val) : Val :=
+    match sys.total? with
+    | some E => eqFun L E b
+    | none =>
+      match b with
+      | .glueU _ _ a => a
+      | b => .unglueU b sys
+
+  /-- `hcomp` at a composition in the universe: as at `Glue`, with the
+  backward transport as the equivalence. -/
+  partial def hcompHU (L : Nat) (A : Val) (sysE sys : System Val) (u : Val) : Val :=
+    let comps := sysE.map fun (γ, E) =>
+      let T := lineApp L E .one
+      let sysγ := faceSys L γ sys
+      let uγ := face L γ u
+      (γ, E, hcomp' L T sysγ uγ, hfill' L T sysγ uγ)
+    let sidesA := sys.map (fun (α, s) =>
+        (α, mkLine L fun L1 j => unglueU' L1 (lineApp L1 s j) (faceSys L1 α sysE)))
+      ++ comps.map (fun (γ, E, _, fill) =>
+        (γ, mkLine L fun L1 j => eqFun L1 E (lineApp L1 fill j)))
+    let a := hcomp' L A (mkSystem sidesA) (unglueU' L u sysE)
+    glueU' sysE (comps.map fun (γ, _, t, _) => (γ, t)) a
+
+  /-- The filler of the backward transport: a line from `eqFun E u` (at 0)
+  to `u` (at 1). -/
+  partial def transpFillNeg (L : Nat) (E u : Val) : Val :=
+    let rev := mkLine L fun L1 i => lineApp L1 E (.neg i)
+    mkLine L fun L1 j => lineApp L1 (transpFill L rev .zero u) (.neg j)
+
+  /-- cubicaltt's `lemEq`: given a line `E` with `b : E 0` and a partial
+  fiber `[α ↦ (a, p)]` with `a : E 1` and `p : Path (E 0) b (eqFun E a)`,
+  a total fiber `(a, p)` extending it. -/
+  partial def lemEq (L : Nat) (E b : Val) (aps : System Val) : Val × Val :=
+    let ta := lineApp L E .one
+    let rev (s : Val) : Val := mkLine L fun L1 j => lineApp L1 s (.neg j)
+    -- Per face, at context `L1` with `i` given: the composite along `j` from
+    -- `p i` up to `E 1`, and its filler.
+    let item (L1 : Nat) (i : IExpr) (α : Face) (ap : Val) : Val × Val :=
+      let aa := vFst ap
+      let pa := vSnd ap
+      let Eα := face L1 α E
+      let bα := face L1 α b
+      let base := papp' L1 pa i bα (eqFun L1 Eα aa)
+      let sides := mkSystem <|
+        (invFormula (.neg i) true).map (fun δ => (δ, transpFill L1 (face L1 δ Eα) .zero (face L1 δ bα)))
+        ++ (invFormula i true).map (fun δ => (δ, transpFillNeg L1 (face L1 δ Eα) (face L1 δ aa)))
+      (comp' L1 Eα sides base false, compFill' L1 Eα sides base)
+    let p1s := mkSystem (aps.map fun (α, ap) => (α, mkLine L fun L1 i => (item L1 i α ap).1))
+    let tb := transp' L E .zero b
+    let a := ghcomp' L ta p1s tb
+    let p1 := ghfill' L ta p1s tb
+    let p := mkLine L fun L1 i =>
+      let sides := (invFormula (.neg i) true).map (fun δ =>
+          (δ, rev (transpFill L1 (face L1 δ E) .zero (face L1 δ b))))
+        ++ (invFormula i true).map (fun δ => (δ, rev (transpFillNeg L1 (face L1 δ E) (face L1 δ a))))
+        ++ aps.map (fun (α, ap) => (α, rev (item L1 i α ap).2))
+      comp' L1 (rev E) (mkSystem sides) (lineApp L1 p1 i) false
+    (a, p)
+
+  /-- Transport along a line of compositions in the universe: `transpGlue`
+  with `eqFun` as the equivalence and `lemEq` for the fibers. `A` and
+  `sysE` are the components peeked at `i = var L`. -/
+  partial def transpHU (L : Nat) (r : IExpr) (b0 A : Val) (sysE : System Val) : Val :=
+    let atI (v : Val) (L1 : Nat) (i' : IExpr) : Val := act L1 [(L, i')] v
+    let A1 := face L [(L, true)] A
+    let sysE0 := faceSys L [(L, false)] sysE
+    let sysE1 := faceSys L [(L, true)] sysE
+    let a0 := unglueU' L b0 sysE0
+    let rFaces := invFormula r true
+    let δs := sysE.filter fun (γ, _) => !γ.mentions L
+    let tfills := δs.map fun (γ, E) =>
+      (γ, transpFill L (mkLine L fun L1 i' => lineApp L1 (atI E L1 i') .one) (γ.apply r) (face L γ b0))
+    let sidesA := rFaces.map (fun δ => (δ, mkLine L fun L1 _ => face L1 δ a0))
+      ++ (δs.zip tfills).map (fun ((γ, E), (_, tf)) =>
+        (γ, mkLine L fun L1 i' => eqFun L1 (atI E L1 i') (lineApp L1 tf i')))
+    let a1 := comp' L (mkLine L fun L1 i' => atI A L1 i') (mkSystem sidesA) a0 true
+    let fibs := sysE1.map fun (γ1, E1) =>
+      let a1γ := face L γ1 a1
+      let b0γ := face L γ1 b0
+      let θ := (invFormula (γ1.apply r) true).map (fun δ =>
+          (δ, Val.pair (face L δ b0γ) (constLine L (face L δ a1γ))))
+        ++ tfills.filterMap (fun (γ, tf) => (γ.meet γ1).map fun key =>
+          let key := key.minus γ1
+          let t1' := face L key (face L γ1 (lineApp L tf .one))
+          (key, Val.pair t1' (constLine L (face L key a1γ))))
+      let (t1, α) := lemEq L E1 a1γ (mkSystem θ)
+      (γ1, E1, t1, α, a1γ)
+    let sidesA1 := fibs.map (fun (γ1, E1, t1, α, a1γ) =>
+        (γ1, mkLine L fun L1 i' => papp' L1 α i' a1γ (eqFun L1 E1 t1)))
+      ++ rFaces.map (fun δ => (δ, mkLine L fun L1 _ => face L1 δ a1))
+    let a1' := ghcomp' L A1 (mkSystem sidesA1) a1
+    glueU' sysE1 (fibs.map fun (γ1, _, t1, _, _) => (γ1, t1)) a1'
 
   partial def hcompGlue (L : Nat) (B : Val) (sysG sys : System Val) (u : Val) : Val :=
     let comps := sysG.map fun (γ, Te) =>
@@ -584,9 +730,9 @@ mutual
       let uγ := face L γ u
       (γ, f, hcomp' L T sysγ uγ, hfill' L T sysγ uγ)
     let sidesB := sys.map (fun (α, s) =>
-        (α, .ibind L (unglue' (L + 1) (lineApp (L + 1) s (.var L)) (faceSys (L + 1) α sysG))))
+        (α, mkLine L fun L1 j => unglue' L1 (lineApp L1 s j) (faceSys L1 α sysG)))
       ++ comps.map (fun (γ, f, _, fill) =>
-        (γ, .ibind L (vApp (L + 1) f (lineApp (L + 1) fill (.var L)) .expl)))
+        (γ, mkLine L fun L1 j => vApp L1 f (lineApp L1 fill j) .expl))
     let a := hcomp' L B (mkSystem sidesB) (unglue' L u sysG)
     glue' sysG (comps.map fun (γ, _, t, _) => (γ, t)) a
 
@@ -596,8 +742,8 @@ mutual
     let c := vFst contr
     let p := vSnd contr
     let sides := θ.map (fun (α, w) =>
-        (α, .ibind L (papp' (L + 1) (vApp (L + 1) (face (L + 1) α p) w .expl) (.var L) (face (L + 1) α c) w)))
-      ++ (invFormula θ.cof false).map (fun β => (β, .ibind L (face (L + 1) β c)))
+        (α, mkLine L fun L1 j => papp' L1 (vApp L1 (face L1 α p) w .expl) j (face L1 α c) w))
+      ++ (invFormula θ.cof false).map (fun β => (β, mkLine L fun L1 _ => face L1 β c))
     hcomp' L X (mkSystem sides) c
 
   /-- `transp^i (Glue [φ ↦ (T, e)] A) r b₀`, after Cubical Agda / Huber:
@@ -605,7 +751,7 @@ mutual
   so no empty systems arise. `A` and `sysG` are the peeked components at
   `i = var L`. -/
   partial def transpGlue (L : Nat) (r : IExpr) (b0 A : Val) (sysG : System Val) : Val :=
-    let i := IExpr.var L
+    let atI (v : Val) (L1 : Nat) (i' : IExpr) : Val := act L1 [(L, i')] v
     let A1 := face L [(L, true)] A
     let sysG0 := faceSys L [(L, false)] sysG
     let sysG1 := faceSys L [(L, true)] sysG
@@ -613,11 +759,11 @@ mutual
     let rFaces := invFormula r true
     let δs := sysG.filter fun (γ, _) => !γ.mentions L
     let tfills := δs.map fun (γ, Te) =>
-      (γ, transpFill L (.ibind L (vFst Te)) (γ.apply r) (face L γ b0))
-    let sidesA := rFaces.map (fun δ => (δ, .ibind L (face (L + 1) δ a0)))
+      (γ, transpFill L (mkLine L fun L1 i' => vFst (atI Te L1 i')) (γ.apply r) (face L γ b0))
+    let sidesA := rFaces.map (fun δ => (δ, mkLine L fun L1 _ => face L1 δ a0))
       ++ (δs.zip tfills).map (fun ((γ, Te), (_, tf)) =>
-        (γ, .ibind L (vApp (L + 1) (vFst (vSnd Te)) (lineApp (L + 1) tf i) .expl)))
-    let a1 := comp' L (.ibind L A) (mkSystem sidesA) a0 true
+        (γ, mkLine L fun L1 i' => vApp L1 (vFst (vSnd (atI Te L1 i'))) (lineApp L1 tf i') .expl))
+    let a1 := comp' L (mkLine L fun L1 i' => atI A L1 i') (mkSystem sidesA) a0 true
     let fibs := sysG1.map fun (γ1, Te1) =>
       let T1 := vFst Te1
       let e1 := vSnd Te1
@@ -625,21 +771,20 @@ mutual
       let a1γ := face L γ1 a1
       let b0γ := face L γ1 b0
       let A1γ := face L γ1 A1
-      let refl := fun (w : Val) => Val.ibind L w
       let θ := (invFormula (γ1.apply r) true).map (fun δ =>
-          (δ, Val.pair (face L δ b0γ) (refl (face L δ a1γ))))
+          (δ, Val.pair (face L δ b0γ) (constLine L (face L δ a1γ))))
         ++ tfills.filterMap (fun (γ, tf) => (γ.meet γ1).map fun key =>
           let key := key.minus γ1
           let t1' := face L key (face L γ1 (lineApp L tf .one))
-          (key, Val.pair t1' (refl (face L key a1γ))))
+          (key, Val.pair t1' (constLine L (face L key a1γ))))
       let fibTy := prim' L "fiber" [T1, A1γ, f1, a1γ]
       let contr := vApp L (vSnd e1) a1γ .expl
       let fib := ext L fibTy contr (mkSystem θ)
       (γ1, vFst fib, vSnd fib, f1, a1γ)
     let sidesA1 := fibs.map (fun (γ1, t1, α, f1, a1γ) =>
-        (γ1, .ibind L (papp' (L + 1) α i a1γ (vApp (L + 1) f1 t1 .expl))))
-      ++ rFaces.map (fun δ => (δ, .ibind L (face (L + 1) δ a1)))
-    let a1' := hcomp' L A1 (mkSystem sidesA1) a1
+        (γ1, mkLine L fun L1 i' => papp' L1 α i' a1γ (vApp L1 f1 t1 .expl)))
+      ++ rFaces.map (fun δ => (δ, mkLine L fun L1 _ => face L1 δ a1))
+    let a1' := ghcomp' L A1 (mkSystem sidesA1) a1
     glue' sysG1 (fibs.map fun (γ1, t1, _, _, _) => (γ1, t1)) a1'
 
   partial def glueTy' (A : Val) (sys : System Val) : Val :=
@@ -726,7 +871,7 @@ partial def readback (p : PRen) (occ : Option Nat) (v : Val) : Except String Tm 
     sp.reverse.foldlM (fun t (u, i) => do pure (.app t (← rb u) i)) (.mvar m)
   | .lam x i c => pure (.lam x i (← under fun u => c.apply G (p.cod + 1) u))
   | .ilam x c => pure (.ilam x (← underI fun r => c.apply G (p.cod + 1) (.i r)))
-  | .ibind l body => pure (.ilam "i" (← underI fun r => act G (p.cod + 1) [(l, r)] body))
+  | .line l body => pure (.ilam "i" (← underI fun r => act G (p.cod + 1) [(l, r)] body.get))
   | .app t u i => pure (.app (← rb t) (← rb u) i)
   | .papp q r x y => pure (.papp (← rb q) (← rbI r) (← rb x) (← rb y))
   | .univ => pure .univ
@@ -747,6 +892,9 @@ partial def readback (p : PRen) (occ : Option Nat) (v : Val) : Except String Tm 
   | .glueTy a sys => pure (.glueTy (← rb a) (← rbSysFlat sys))
   | .glue tySys sys a => pure (.glue (← rbSysFlat tySys) (← rbSysFlat sys) (← rb a))
   | .unglue b sys => pure (.unglue (← rb b) (← rbSysFlat sys))
+  | .hcompU a sys => pure (.hcomp false .univ (← rbSys sys) (← rb a))
+  | .glueU tySys us a => pure (.glueU (← rbSys tySys) (← rbSysFlat us) (← rb a))
+  | .unglueU b sys => pure (.unglueU (← rb b) (← rbSys sys))
   | .prim n args => rbArgs (.prim n) args
   | .split P env cases x =>
     let cases' ← cases.mapM fun (c, names, body) => do

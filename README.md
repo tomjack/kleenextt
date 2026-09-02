@@ -39,25 +39,31 @@ polymorphism (postponed insertion, zoo stage 06) is not implemented.
 **Cubical layer**: CCHM-style, with `transp` and `hcomp` as the primitives
 (the CHM / Cubical Agda decomposition) and `comp`, `hfill`, `ghcomp`
 derived. Type formers: Pi (also over `I`), Sigma, `PathP`, `Glue`, the
-universe, and two hardcoded inductives — strict `Bool` and the HIT `S1`
-(`base`, `loop`, eliminator computing on `hcomp`). `transp` for `Glue`
-follows Cubical Agda / Huber, with `ghcomp` in the `∀i.φ` correction so no
-empty systems arise; `hcomp` in the universe reduces to a `Glue` type along
-`lineToEquiv`, an object-level definition in `Prelude.lean` registered with
-`#kbuiltin`. Equivalences are contractible-fiber (`Equiv`, `isEquiv`,
+universe, and user-declared parameterless inductive types and HITs
+(`kdata`, with `case` as the dependent eliminator, computing on `hcomp` by
+the CHM rule). `transp` for `Glue` follows Cubical Agda / Huber, with
+`ghcomp` in the `∀i.φ` correction so no empty systems arise. `hcomp` in the
+universe is a type former of its own (cubicaltt's `VCompU`): its elements
+are `glueU`, the implicit equivalence is transport backwards along the side
+line, and `lemEq` supplies the fiber contraction, so no equivalence proof
+is ever built. Equivalences are contractible-fiber (`Equiv`, `isEquiv`,
 `fiber`, `isContr` are primitives unfolding to closed templates).
 
-Values use de Bruijn levels for both ordinary and interval variables;
-semantic interval binders record their level, and interval substitution is
-eager and re-runs the computation rules on neutral forms, as in cubicaltt.
-Every semantic operation takes the current context size as its fresh-level
-supply. Known gaps: no interval metavariables, so an interval-binding lambda
-must be checked against a known type; the `Glue` eta rule is in unification
-but not in the computation rules.
+Values use de Bruijn levels for both ordinary and interval variables.
+Semantic interval binders (`line`) hold their body at a fresh variable as a
+memoised thunk; instantiation substitutes into it, and substitution into a
+line is deferred. Substitution is otherwise eager, skips values outside its
+support, and re-runs the computation rules on neutral forms, as in
+cubicaltt. Top-level definitions are lazily evaluated constants outside the
+environment. Every semantic operation takes the current context size as its
+fresh-level supply. Known gaps: no interval metavariables, so an
+interval-binding lambda must be checked against a known type; the `Glue`
+eta rule is in unification but not in the computation rules; the
+Brunerie-number computation in `Brunerie.lean` does not finish.
 
 **Lean as the surface language**: no string parser. `Frontend.lean` declares
 a `kexpr` syntax category (existing Lean tokens only) and commands — `kdef`,
-`#kbuiltin`, `#knf`, `#ktype`, `#kconv`, `#kdiffer`, `#kfail` — that run our
+`kdata`, `#knf`, `#ktype`, `#kconv`, `#kdiffer`, `#kfail` — that run our
 elaborator at elaboration time, keeping checked definitions in an
 environment extension. The cubical primitives are ordinary identifiers
 recognised at the head of an application; systems are written

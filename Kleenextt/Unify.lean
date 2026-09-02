@@ -69,8 +69,8 @@ mutual
     match force G l t, force G l u with
     | .ilam _ c, t' => unify (l + 1) (c.apply G (l + 1) (.i (.var l))) (lineApp G (l + 1) t' (.var l))
     | t, .ilam _ c' => unify (l + 1) (lineApp G (l + 1) t (.var l)) (c'.apply G (l + 1) (.i (.var l)))
-    | .ibind l0 b, t' => unify (l + 1) (act G (l + 1) [(l0, .var l)] b) (lineApp G (l + 1) t' (.var l))
-    | t, .ibind l0 b' => unify (l + 1) (lineApp G (l + 1) t (.var l)) (act G (l + 1) [(l0, .var l)] b')
+    | .line l0 b, t' => unify (l + 1) (act G (l + 1) [(l0, .var l)] b.get) (lineApp G (l + 1) t' (.var l))
+    | t, .line l0 b' => unify (l + 1) (lineApp G (l + 1) t (.var l)) (act G (l + 1) [(l0, .var l)] b'.get)
     | .lam _ _ c, .lam _ _ c' => unify (l + 1) (c.apply G (l + 1) (.var l)) (c'.apply G (l + 1) (.var l))
     | .lam _ i c, t' => unify (l + 1) (c.apply G (l + 1) (.var l)) (vApp G (l + 1) t' (.var l) i)
     | t, .lam _ i c' => unify (l + 1) (vApp G (l + 1) t (.var l) i) (c'.apply G (l + 1) (.var l))
@@ -111,6 +111,11 @@ mutual
     | .glue tySys sys a, t' => glueEta l tySys sys a t'
     | t, .glue tySys sys' a' => glueEta l tySys sys' a' t
     | .unglue b _, .unglue b' _ => unify l b b'
+    | .hcompU a sys, .hcompU a' sys' => do unify l a a'; unifySys l true sys sys'
+    | .glueU _ us a, .glueU _ us' a' => do unifySys l false us us'; unify l a a'
+    | .glueU tySys us a, t' => glueUEta l tySys us a t'
+    | t, .glueU tySys us' a' => glueUEta l tySys us' a' t
+    | .unglueU b _, .unglueU b' _ => unify l b b'
     | .prim n args, .prim n' args' =>
       if n == n' && args.length == args'.length then
         for (a, a') in args.zip args' do unify l a a'
@@ -133,6 +138,13 @@ mutual
     let G ← get
     unify l a (unglue' G l t tySys)
     for (α, s) in sys do
+      let G ← get
+      unify l s (face G l α t)
+
+  partial def glueUEta (l : Nat) (tySys us : System Val) (a t : Val) : UnifyM Unit := do
+    let G ← get
+    unify l a (unglueU' G l t tySys)
+    for (α, s) in us do
       let G ← get
       unify l s (face G l α t)
 end

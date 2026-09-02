@@ -56,6 +56,5 @@ kdef lineToEquivFwd : (E : I → Type) → Equiv (E 0) (E 1) := λ E =>
            (ω (j ∧ k)))))
 
 kdef lineToEquiv : (E : I → Type) → Equiv (E 1) (E 0) := λ E => lineToEquivFwd (λ i => E (¬ i))
-#kbuiltin lineToEquiv
 
 end Kleenextt.Prelude

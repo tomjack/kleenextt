@@ -467,7 +467,7 @@ mutual
         let cxtδ := cxtj.restrict G δ
         let t' ← check cxtδ t (face G cxtj.lvl δ ty)
         let G ← get
-        vsys := vsys ++ [(δ, .ibind cxt.lvl (eval G cxtδ.lvl cxtδ.env t'))]
+        vsys := vsys ++ [(δ, .ilam j (.mk cxtδ.env.tail t'))]
         entries := entries ++ [(φ, t')]
     checkCompatible cxt true vsys
     pure (entries, mkSystem vsys)
@@ -572,6 +572,8 @@ partial def zonk (G : Globals) (env : Env) (l : Nat) : Tm → Except String Tm
   | .glueTy a sys => do pure (.glueTy (← z a) (← zflat sys))
   | .glue tySys sys a => do pure (.glue (← zflat tySys) (← zflat sys) (← z a))
   | .unglue b sys => do pure (.unglue (← z b) (← zflat sys))
+  | .glueU tySys us a => do pure (.glueU (← zsys tySys) (← zflat us) (← z a))
+  | .unglueU b sys => do pure (.unglueU (← z b) (← zsys sys))
   | .split P cases x => do
     let cases' ← cases.mapM fun (c, names, body) => do
       let (nf, ni) := match G.con? c with
