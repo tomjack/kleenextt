@@ -367,6 +367,159 @@ elab tk:"#ktime " e:kexpr : command => do
   let shown := if n.length > 200 then String.ofList (n.toList.take 200) ++ "…" else n
   logInfoAt tk m!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {shown}"
 
+/-- `#ktime` on a task, printing the counters and the resident set size to
+stderr every two seconds until it finishes: a growth curve that survives
+running out of memory. The elaborator buffers the standard streams into
+the message log, so the samples go through a fresh handle on the
+process's stderr. -/
+elab tk:"#ktrace " e:kexpr : command => do
+  let (cxt, G) ← currentCxt
+  let r : Except String (Tm × Globals) := do
+    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
+    pure (t, G)
+  let (t, G) ← orThrowAt e r
+  let err ← IO.FS.Handle.mk "/dev/stderr" .append
+  Stats.reset
+  let t0 ← IO.monoMsNow
+  let task ← IO.asTask (prio := .dedicated) do
+    let v ← IO.lazyPure fun _ => eval G cxt.lvl cxt.env t
+    let t1 ← IO.monoMsNow
+    let n ← IO.lazyPure fun _ => (quote G cxt.lvl v).pretty 0 cxt.names
+    pure (t1, n)
+  let mut done := false
+  while !done do
+    IO.sleep 2000
+    let ms := (← IO.monoMsNow) - t0
+    err.putStrLn s!"[{ms / 1000} s, {← residentMB} MB] {(← Stats.read).pretty}"
+    err.flush
+    done ← IO.hasFinished task
+  let (t1, n) ← IO.ofExcept task.get
+  let t2 ← IO.monoMsNow
+  let s ← Stats.read
+  let shown := if n.length > 200 then String.ofList (n.toList.take 200) ++ "…" else n
+  logInfoAt tk m!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {shown}"
+
+private def showFaces {α : Type} (sys : List (Face × α)) : String :=
+  "[" ++ ", ".intercalate (sys.map fun (α, _) =>
+    if α.isEmpty then "⊤" else " ∧ ".intercalate (α.map fun (l, d) => s!"v{l}={if d then 1 else 0}")) ++ "]"
+
+/-- The head constructor of a value with the faces of its systems, without
+quoting the components. -/
+private partial def headInfo (v : Val) (depth : Nat := 3) : String :=
+  match v.whnf with
+  | .hcomp _ sys u => s!"hcomp {showFaces sys} ({if depth == 0 then "…" else headInfo u (depth - 1)})"
+  | .hcompU _ sys => s!"hcompU {showFaces sys}"
+  | .glueU tySys us a => s!"glueU {showFaces tySys} {showFaces us} ({if depth == 0 then "…" else headInfo a (depth - 1)})"
+  | .unglueU b sys => s!"unglueU {showFaces sys} ({if depth == 0 then "…" else headInfo b (depth - 1)})"
+  | .glueTy _ sys => s!"Glue {showFaces sys}"
+  | .glue tySys sys a => s!"glue {showFaces tySys} {showFaces sys} ({if depth == 0 then "…" else headInfo a (depth - 1)})"
+  | .unglue b sys => s!"unglue {showFaces sys} ({if depth == 0 then "…" else headInfo b (depth - 1)})"
+  | .transp _ r u => s!"transp {repr r} ({if depth == 0 then "…" else headInfo u (depth - 1)})"
+  | .split _ _ _ x => s!"split ({if depth == 0 then "…" else headInfo x (depth - 1)})"
+  | .prim n args => s!"{n}/{args.length}"
+  | .pair .. => "pair"
+  | .fst t => s!"fst ({if depth == 0 then "…" else headInfo t (depth - 1)})"
+  | .snd t => s!"snd ({if depth == 0 then "…" else headInfo t (depth - 1)})"
+  | .app .. => "app"
+  | .papp .. => "papp"
+  | .lam .. | .ilam .. | .line .. => "λ"
+  | .pi .. => "Π"
+  | .sigma .. => "Σ"
+  | .pathP .. => "PathP"
+  | .univ => "Type"
+  | .interval => "I"
+  | .i r => s!"{repr r}"
+  | .var l => s!"var {l}"
+  | .flex m _ => s!"?{m}"
+  | .sub .. | .lazy .. | .cached .. => "unforced"
+
+/-- The elaborated core term of `e`, with its type. -/
+elab tk:"#kterm " e:kexpr : command => do
+  let (cxt, G) ← currentCxt
+  let r : Except String (String × String) := do
+    let ((t, a), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
+    pure ((← zonk G cxt.env cxt.lvl t).pretty 0 cxt.names, cxt.showVal G a)
+  let (t, ty) ← orThrowAt e r
+  logInfoAt tk m!"{t}\n  : {ty}"
+
+/-- The head of `e` after instantiating `k` interval binders at fresh
+variables, with the faces of its systems. -/
+elab tk:"#khead " k:num e:kexpr : command => do
+  let (cxt, G) ← currentCxt
+  let r : Except String (Tm × Globals) := do
+    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
+    pure (t, G)
+  let (t, G) ← orThrowAt e r
+  let k := k.getNat
+  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) v (.var (cxt.lvl + n))) (eval G cxt.lvl cxt.env t)
+  let s ← IO.lazyPure fun _ => headInfo v
+  logInfoAt tk s!"levels {cxt.lvl}..{cxt.lvl + k}: {s}"
+
+/-- The system invariant on an `hcomp` value: after instantiating `k`
+interval binders at fresh variables, every two sides must agree on their
+common face and every side at `0` must agree with the base on its face,
+by normal form. -/
+elab tk:"#koverlaps " k:num e:kexpr : command => do
+  let (cxt, G) ← currentCxt
+  let r : Except String (Tm × Globals) := do
+    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
+    pure (t, G)
+  let (t, G) ← orThrowAt e r
+  let k := k.getNat
+  let L := cxt.lvl + k
+  let names := (List.range k).foldl (fun ns n => s!"v{n}" :: ns) cxt.names
+  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) v (.var (cxt.lvl + n))) (eval G cxt.lvl cxt.env t)
+  let head (s : String) : String := if s.length > 300 then String.ofList (s.toList.take 300) ++ "…" else s
+  match v.whnf with
+  | .hcomp _ sys u =>
+    let mut report := s!"{showFaces sys}\n"
+    -- Sides at the fresh level `L` against each other on common faces.
+    let sides := (sys.map fun (α, s) => (α, s, lineApp G (L + 1) s (.var L))).toArray
+    for hx : x in [0:sides.size] do
+      let (α, s, sv) := sides[x]
+      let gen ← IO.lazyPure fun _ => (face G (L + 1) α sv).headStr 3
+      let lid ← IO.lazyPure fun _ => (face G L α (lineApp G L s .one)).headStr 3
+      report := report ++ s!"side {showFaces [(α, ())]}: {gen}\n  at 1: {lid}\n"
+      for hy : y in [x + 1:sides.size] do
+        let (β, _, sv') := sides[y]
+        if let some γ := α.meet β then
+          let a ← IO.lazyPure fun _ => (quote G (L + 1) (face G (L + 1) γ sv)).pretty 0 ("l" :: names)
+          let b ← IO.lazyPure fun _ => (quote G (L + 1) (face G (L + 1) γ sv')).pretty 0 ("l" :: names)
+          if a != b then
+            report := report ++ s!"DISAGREE on {showFaces [(γ, ())]}:\n  {head a}\n  {head b}\n"
+      let a ← IO.lazyPure fun _ => (quote G L (face G L α (lineApp G L s .zero))).pretty 0 names
+      let b ← IO.lazyPure fun _ => (quote G L (face G L α u)).pretty 0 names
+      if a != b then
+        report := report ++ s!"side {showFaces [(α, ())]} at 0 ≠ base:\n  {head a}\n  {head b}\n"
+    logInfoAt tk report
+  | w => logInfoAt tk s!"not an hcomp: {headInfo w}"
+
+/-- Stability of evaluation under substitution: after instantiating `k`
+interval binders of `e` at fresh variables, the next binder is instantiated
+at a fresh variable with the endpoints then substituted, and directly at
+each endpoint; the normal forms must agree. -/
+elab tk:"#kstable " k:num e:kexpr : command => do
+  let (cxt, G) ← currentCxt
+  let r : Except String (Tm × Globals) := do
+    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
+    pure (t, G)
+  let (t, G) ← orThrowAt e r
+  let k := k.getNat
+  let L := cxt.lvl + k
+  let names := (List.range k).foldl (fun ns n => s!"v{n}" :: ns) cxt.names
+  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) v (.var (cxt.lvl + n))) (eval G cxt.lvl cxt.env t)
+  let generic := lineApp G (L + 1) v (.var L)
+  let show_ (w : Val) : String := (quote G L w).pretty 0 names
+  let head (s : String) : String := if s.length > 300 then String.ofList (s.toList.take 300) ++ "…" else s
+  let gen ← IO.lazyPure fun _ => headInfo generic
+  let mut report := s!"generic: {gen}\n"
+  for (r, name) in [(IExpr.zero, "0"), (IExpr.one, "1")] do
+    let viaSub ← IO.lazyPure fun _ => show_ (act G L [(L, r)] generic)
+    let direct ← IO.lazyPure fun _ => show_ (lineApp G L v r)
+    if viaSub == direct then report := report ++ s!"at {name}: stable\n  {head direct}\n"
+    else report := report ++ s!"at {name}: UNSTABLE\n  substituted: {head viaSub}\n  direct:      {head direct}\n"
+  logInfoAt tk report
+
 elab tk:"#ktype " e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String String := do

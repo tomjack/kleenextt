@@ -240,6 +240,47 @@ def Globals.con? (G : Globals) (c : String) : Option (DataInfo × ConInfo) :=
 
 instance [Vars Val] : Vars Closure := ⟨fun c => match c with | .mk env _ => Vars.vars env⟩
 
+/-- Expose the head: push deferred substitutions and force deferred
+computations. -/
+partial def Val.whnf : Val → Val
+  | .sub _ _ _ _ head => head.get.whnf
+  | .lazy _ body => body.get.whnf
+  | .cached _ v => v.whnf
+  | v => v
+
+/-- The head of a value with the faces of its systems, for diagnostics. -/
+partial def Val.headStr (v : Val) (depth : Nat := 3) : String :=
+  let faces (sys : System Val) : String :=
+    "[" ++ ", ".intercalate (sys.map fun (α, _) =>
+      if α.isEmpty then "⊤" else " ∧ ".intercalate (α.map fun (l, d) => s!"v{l}={if d then 1 else 0}")) ++ "]"
+  let sub (w : Val) : String := if depth == 0 then "…" else w.headStr (depth - 1)
+  match v.whnf with
+  | .hcomp _ sys u => s!"hcomp {faces sys} ({sub u})"
+  | .hcompU _ sys => s!"hcompU {faces sys}"
+  | .glueU tySys us a => s!"glueU {faces tySys} {faces us} ({sub a})"
+  | .unglueU b sys => s!"unglueU {faces sys} ({sub b})"
+  | .glueTy _ sys => s!"Glue {faces sys}"
+  | .glue tySys sys a => s!"glue {faces tySys} {faces sys} ({sub a})"
+  | .unglue b sys => s!"unglue {faces sys} ({sub b})"
+  | .transp _ r u => s!"transp {repr r} ({sub u})"
+  | .split _ _ cases x => s!"case {cases.map (·.1)} ({sub x})"
+  | .prim n args => s!"{n}/{args.length}"
+  | .pair .. => "pair"
+  | .fst t => s!"fst ({sub t})"
+  | .snd t => s!"snd ({sub t})"
+  | .app t _ _ => s!"app ({sub t})"
+  | .papp p .. => s!"papp ({sub p})"
+  | .lam .. | .ilam .. | .line .. => "λ"
+  | .pi .. => "Π"
+  | .sigma .. => "Σ"
+  | .pathP .. => "PathP"
+  | .univ => "Type"
+  | .interval => "I"
+  | .i r => s!"{repr r}"
+  | .var l => s!"var {l}"
+  | .flex m _ => s!"?{m}"
+  | .sub .. | .lazy .. | .cached .. => "unforced"
+
 /-- Substitute in a system: a face `α` becomes the faces on which `σ`
 makes `α`'s equations hold, with the component under each. -/
 def System.act (actVal : Nat → Subst → Val → Val) (L : Nat) (σ : Subst) (sys : System Val) : System Val :=
@@ -251,14 +292,6 @@ def System.act (actVal : Nat → Subst → Val → Val) (L : Nat) (σ : Subst) (
       | none => acc
     (invFormula ψ true).filterMap fun δ =>
       (δ.meet β).map fun key => (key, actVal L (σ.under key) u)
-
-/-- Expose the head: push deferred substitutions and force deferred
-computations. -/
-partial def Val.whnf : Val → Val
-  | .sub _ _ _ _ head => head.get.whnf
-  | .lazy _ body => body.get.whnf
-  | .cached _ v => v.whnf
-  | v => v
 
 /-- Evaluate an interval expression over indices in an environment. -/
 def evalI (env : Env) (r : IExpr) : IExpr :=
@@ -426,7 +459,7 @@ mutual
       match v with
       | .line l body _ =>
         .line L (Thunk.mk fun _ => act (L + 1) ((l, .var L) :: σ) body.get) (σ.varsUnder vs)
-      | v => .sub L σ v (σ.varsUnder vs) (Thunk.mk fun _ => push L σ v)
+      | v => tick .subs <| .sub L σ v (σ.varsUnder vs) (Thunk.mk fun _ => push L σ v)
 
   /-- One layer of a substitution known to touch `v`: the children are
   substituted lazily and the computation rules re-run on a neutral head. -/
@@ -476,8 +509,7 @@ mutual
   /-- A line in context `L` from its closure: the body memoised at the
   fresh level `L`, the support from the captures. -/
   partial def mkLine (L : Nat) (c : Line) : Val :=
-    tick .lines <| .line L (Thunk.mk fun _ => tick .bodies <| c.apply (L + 1) (.var L)) (Line.vars c)
-
+    tick .lines <| .line L (Thunk.mk fun _ => tick .bodies <| gauge .maxLevel (L + 1) <| c.apply (L + 1) (.var L)) (Line.vars c)
   /-- A line in context `L` from a body mentioning the fresh level `L`. -/
   partial def mkBind (L : Nat) (body : Val) : Val :=
     .line L (Thunk.pure body) (clearLevel body.vars L)
@@ -486,11 +518,11 @@ mutual
   with the support of the captures: for a component that a total face may
   discard. -/
   partial def mkLazy (L : Nat) (c : Line) : Val :=
-    .lazy (Line.vars c) (Thunk.mk fun _ => c.apply L .zero)
+    tick .lazies <| .lazy (Line.vars c) (Thunk.mk fun _ => tick .lazyBodies <| c.apply L .zero)
 
   /-- Record the support of a newly built compound value. -/
   partial def cache (v : Val) : Val :=
-    .cached v.vars v
+    tick .cacheds <| .cached v.vars v
 
   partial def lazyFst (L : Nat) (v : Val) : Val :=
     mkLazy L (closure% fun _ _ => vFst v)
@@ -541,6 +573,7 @@ mutual
       match G.data? D with
       | some d =>
         if d.hit then
+          tick .splitHcomp <|
           let fill := hfill' L (.prim D []) sys u
           let pline := mkLine L (closure% fun L1 j => vApp L1 P (lineApp L1 fill j) .expl)
           let sides := sys.map fun (α, s) =>
@@ -549,6 +582,13 @@ mutual
           comp' L pline (mkSystem sides) (splitApp L P env cases u) false
         else .split P env cases x
       | none => cache (.split P env cases x)
+    | .glueU .. | .glue .. =>
+      panic! s!"split: case {cases.map (·.1)} on {x.headStr 4}, motive {P.headStr 1}"
+    | .hcomp A .. =>
+      match A with
+      | .hcompU .. | .glueTy .. =>
+        panic! s!"split: case {cases.map (·.1)} on {x.headStr 4} at type {A.headStr 2}"
+      | _ => cache (.split P env cases x)
     | _ => cache (.split P env cases x)
 
   /-- `hcomp` at a strict inductive type: constructor-wise, along the field
@@ -603,8 +643,9 @@ mutual
     if r.isOne then u else
     tick .transp <|
     match (lineApp (L + 1) a (.var L)).whnf with
-    | .pi .. => cache (.transp a r u)
+    | .pi .. => tick .transpStuck <| cache (.transp a r u)
     | .sigma .. =>
+      tick .transpSigma <|
       let aline := mkLine L (closure% fun L1 i =>
         match (lineApp L1 a i).whnf with
         | .sigma _ A _ => A
@@ -617,6 +658,7 @@ mutual
         | _ => panic! "transp: line is not constantly a pair type")
       .pair v1 (mkLazy L (closure% fun L1 _ => transp' L1 bline r (vSnd u)))
     | .pathP .. =>
+      tick .transpPath <|
       let (_, x0, y0) := pathPAt L a .zero
       mkLine L (closure% fun L1 k =>
         let aline := mkLine L1 (closure% fun L2 i => lineApp L2 (pathPAt L2 a i).1 k)
@@ -631,7 +673,17 @@ mutual
     | .prim n [] => if (G.data? n).isSome then u else .transp a r u
     | .glueTy A sysG => transpGlue L r u A sysG
     | .hcompU A sysE => transpHU L r u A sysE
-    | _ => cache (.transp a r u)
+    | w =>
+      let neutral : Val → Bool
+        | .var .. | .app .. | .flex .. | .papp .. => true
+        | _ => false
+      match w with
+      | .split _ _ _ x =>
+        if neutral x.whnf then tick .transpStuck <| cache (.transp a r u)
+        else panic! s!"transp stuck at L={L} on type {w.headStr 4}, element {u.headStr 2}"
+      | w =>
+        if neutral w then tick .transpStuck <| cache (.transp a r u)
+        else panic! s!"transp stuck at L={L} on type {w.headStr 4}, element {u.headStr 2}"
 
   /-- The codomain of a line of function types at a point, at an argument. -/
   partial def piCod (L : Nat) (a : Val) (i : IExpr) (x : Val) : Val :=
@@ -697,8 +749,9 @@ mutual
     tick .hcomp <|
     let A := A.whnf
     match A with
-    | .pi .. => cache (.hcomp A sys u)
+    | .pi .. => tick .hcompStuck <| cache (.hcomp A sys u)
     | .sigma _ a c =>
+      tick .hcompSigma <|
       let sys1 := sys.map fun (α, s) => (α, mkLine L (closure% fun L1 j => vFst (lineApp L1 s j)))
       let sys2 := sys.map fun (α, s) => (α, mkLine L (closure% fun L1 j => vSnd (lineApp L1 s j)))
       let u1 := vFst u
@@ -707,20 +760,21 @@ mutual
       let bline := mkLine L (closure% fun L1 j => c.apply L1 (lineApp L1 fill1 j))
       .pair v1 (mkLazy L (closure% fun L1 _ => comp' L1 bline sys2 (vSnd u) false))
     | .pathP a x y =>
+      tick .hcompPath <|
       mkLine L (closure% fun L1 k =>
         let sides := sys.map (fun (α, s) =>
             (α, mkLine L1 (closure% fun L2 j => papp' L2 (lineApp L2 s j) k (face L2 α x) (face L2 α y))))
           ++ (invFormula (.neg k) true).map (fun δ => (δ, mkLine L1 (closure% fun L2 _ => face L2 δ x)))
           ++ (invFormula k true).map (fun δ => (δ, mkLine L1 (closure% fun L2 _ => face L2 δ y)))
         hcomp' L1 (lineApp L1 a k) (mkSystem sides) (papp' L1 u k x y))
-    | .univ => hcompU' L u sys
-    | .glueTy B sysG => hcompGlue L B sysG sys u
-    | .hcompU B sysE => hcompHU L B sysE sys u
+    | .univ => tick .hcompU <| hcompU' L u sys
+    | .glueTy B sysG => tick .hcompGlue <| hcompGlue L B sysG sys u
+    | .hcompU B sysE => tick .hcompHU <| hcompHU L B sysE sys u
     | .prim n [] =>
       match G.data? n with
-      | some d => if d.hit then .hcomp A sys u else hcompData L A sys u
-      | none => cache (.hcomp A sys u)
-    | _ => cache (.hcomp A sys u)
+      | some d => if d.hit then tick .hcompHIT <| .hcomp A sys u else tick .hcompData <| hcompData L A sys u
+      | none => tick .hcompStuck <| cache (.hcomp A sys u)
+    | _ => tick .hcompStuck <| cache (.hcomp A sys u)
 
   /-- `hcomp` at a function type, applied. -/
   partial def hcompApp (L : Nat) (A : Val) (sys : System Val) (f u : Val) (i : Icit) : Val :=
@@ -757,12 +811,18 @@ mutual
     | none =>
       match b.whnf with
       | .glueU _ _ a => a
+      | .prim .. | .pair .. =>
+        panic! s!"unglueU of {b.headStr 2} at {(Val.hcompU .univ sys).headStr}"
       | b => cache (.unglueU b sys)
 
   /-- `hcomp` at a composition in the universe: as at `Glue`, with the
-  backward transport as the equivalence. -/
+  backward transport as the equivalence. A face's component is restricted
+  to its face like the element it is applied to: off the face its type
+  need not reduce, and an element built there is passed through unchanged
+  by the rules that later see the type restricted. -/
   partial def hcompHU (L : Nat) (A : Val) (sysE sys : System Val) (u : Val) : Val :=
     let comps := sysE.map fun (γ, E) =>
+      let E := face L γ E
       let T := lineApp L E .one
       let sysγ := faceSys L γ sys
       let uγ := face L γ u
@@ -825,13 +885,14 @@ mutual
     let rFaces := invFormula r true
     let δs := sysE.filter fun (γ, _) => !γ.mentions L
     let tfills := δs.map fun (γ, E) =>
-      let E := mkBind L E
+      let E := face L γ (mkBind L E)
       (γ, E, transpFill L (mkLine L (closure% fun L1 i' => lineApp L1 (lineApp L1 E i') .one)) (γ.apply r) (face L γ b0))
     let sidesA := rFaces.map (fun δ => (δ, mkLine L (closure% fun L1 _ => face L1 δ a0)))
       ++ tfills.map (fun (γ, E, tf) =>
         (γ, mkLine L (closure% fun L1 i' => eqFun L1 (lineApp L1 E i') (lineApp L1 tf i'))))
     let a1 := mkLazy L (closure% fun L1 _ => comp' L1 Aline (mkSystem sidesA) a0 true)
     let fibs := sysE1.map fun (γ1, E1) =>
+      let E1 := face L γ1 E1
       let a1γ := face L γ1 a1
       let b0γ := face L γ1 b0
       let θ := (invFormula (γ1.apply r) true).map (fun δ =>
@@ -852,6 +913,7 @@ mutual
 
   partial def hcompGlue (L : Nat) (B : Val) (sysG sys : System Val) (u : Val) : Val :=
     let comps := sysG.map fun (γ, Te) =>
+      let Te := face L γ Te
       let T := vFst Te
       let f := vFst (vSnd Te)
       let sysγ := faceSys L γ sys
@@ -877,7 +939,8 @@ mutual
   /-- `transp^i (Glue [φ ↦ (T, e)] A) r b₀`, after Cubical Agda / Huber:
   the `∀i.φ` correction is folded into a `ghcomp`-based composition in `A`,
   so no empty systems arise. `A` and `sysG` are the components peeked at
-  `i = var L`, made lines again by binding `L`. -/
+  `i = var L`, made lines again by binding `L`. Each face's component is
+  restricted to its face, as in `hcompHU`. -/
   partial def transpGlue (L : Nat) (r : IExpr) (b0 A : Val) (sysG : System Val) : Val :=
     tick .transpGlue <|
     let A1 := face L [(L, true)] A
@@ -888,7 +951,7 @@ mutual
     let rFaces := invFormula r true
     let δs := sysG.filter fun (γ, _) => !γ.mentions L
     let tfills := δs.map fun (γ, Te) =>
-      let Te := mkBind L Te
+      let Te := face L γ (mkBind L Te)
       (γ, Te, transpFill L (mkLine L (closure% fun L1 i' => vFst (lineApp L1 Te i'))) (γ.apply r) (face L γ b0))
     let sidesA := rFaces.map (fun δ => (δ, mkLine L (closure% fun L1 _ => face L1 δ a0)))
       ++ tfills.map (fun (γ, Te, tf) =>
@@ -896,6 +959,7 @@ mutual
           vApp L1 (vFst (vSnd (lineApp L1 Te i'))) (lineApp L1 tf i') .expl)))
     let a1 := mkLazy L (closure% fun L1 _ => comp' L1 Aline (mkSystem sidesA) a0 true)
     let fibs := sysG1.map fun (γ1, Te1) =>
+      let Te1 := face L γ1 Te1
       let T1 := vFst Te1
       let e1 := vSnd Te1
       let f1 := vFst e1

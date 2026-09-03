@@ -224,17 +224,38 @@ environments nesting; compound values now carry their support in a
 transparent `cached` node (`generator`: 9.0 s to 3.8 s). What remains is
 flat: line instantiation, pushing substitutions, face normal forms.
 
-Not computing: the writhe of the Whitehead square written directly as
-nested `hcomp`s (`W22`, cctt's `w22thing`, whose writhe cctt's own file
-names `error`) and `hope`. Both run out of memory (9 to 17 GB). Their
-cubes are tiny (two `hcomp`s) but have connections in the constructor
-arguments, so every `Glue` built from a face has faces on connections
-that each filler instantiation splits again; the open `split` of the
-`W22` cube has a 41 MB normal form against 111 KB for `w22`. The closed
-computations never need that normal form, so what is retained, and why,
-is the open question. Not the memoised `sub` heads: recomputing each
-push instead, as cctt does, costs 1.5x in time and leaves the memory
-the same.
+The writhe of the Whitehead square written directly as nested `hcomp`s
+with connections in the constructor arguments (`W22`, Tom's `W₂₂'`) is
++2, in 13 minutes and 21 GB: 74M `hcomp`s against 27k for `brunerie`.
+It first normalised, with the same work, to a stuck term, `helix`
+applied to a `glueU`. The `Glue` and universe-composition rules built
+each face's fibre from the type component `E` of that face without
+restricting `E` to the face, while restricting the element; off the face
+the type is a universe composition where on the face it is `S1`, so the
+transport of `base` produced off-face garbage (`unglueU base` at a
+system with no total face), which leaked when a later composition
+restricted its type to the face, found a data type, and returned the
+element unchanged. cubicaltt restricts both. `generator` passed through
+the same states and was right by luck; `brunerie` never reached them.
+`splitApp`, `unglueU'` and `transp'` now panic on a case or unglue of a
+canonical form of the wrong type and on a transport stuck at a
+non-neutral type. Found with `#ktrace` (counters and resident size every
+two seconds), `#khead` (head and system faces at generic levels),
+`#kstable` (generic evaluation then substitution of an endpoint, against
+evaluation at the endpoint), `#koverlaps` (sides of an `hcomp` agree on
+common faces and with the base) and a tag threaded through `transp'`
+naming the construction site.
+
+Memory grows linearly with work, about 300 bytes per `hcomp`: what is
+computed stays reachable through the memoised line bodies of the outer
+transports' lines. Lines that re-apply their closure at each
+instantiation instead, as cctt's do, hold memory flat at 1.8 GB but cost
+5x to 50x in work (`brunerie` 0.5 s to 22 s, `generator` 3.8 s to 174 s),
+so the memoised body stays. The level bitmask never exceeds 19 here, so
+it is unboxed. cctt is Cartesian, without connections; its normal-form
+version of the square (`w22thing`) takes 6.4 s and 13.5M `hcom`s against
+0.09 s and 87k for its Brunerie number, so the direct square is two
+orders harder there too. `hope` is untried.
 
 Open: what the closure is worth for printing lines.
 
