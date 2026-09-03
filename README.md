@@ -51,10 +51,11 @@ is ever built. Equivalences are contractible-fiber (`Equiv`, `isEquiv`,
 
 Values use de Bruijn levels for both ordinary and interval variables.
 Semantic interval binders (`line`) hold their body at a fresh variable as a
-memoised thunk; instantiation substitutes into it, and substitution into a
-line is deferred. Substitution is otherwise eager, skips values outside its
-support, and re-runs the computation rules on neutral forms, as in
-cubicaltt. Top-level definitions are lazily evaluated constants outside the
+memoised thunk, and their support, computed from the captures of the
+derived closure they are built from (below); instantiation substitutes
+into the body, and substitution into a line is deferred. Substitution is
+otherwise eager, skips values outside their support, and re-runs the
+computation rules on neutral forms, as in cubicaltt. Top-level definitions are lazily evaluated constants outside the
 environment. Every semantic operation takes the current context size as its
 fresh-level supply. Known gaps: no interval metavariables, so an
 interval-binding lambda must be checked against a known type; the `Glue`
@@ -62,14 +63,16 @@ eta rule is in unification but not in the computation rules; the
 Brunerie-number computation in `Brunerie.lean` does not finish.
 
 **Derived closures** (`Defun.lean`, exercised on a toy domain in
-`DefunTest.lean`; `Eval.lean` does not use it yet): a `defun … in … end
-defun` block holds the domain and its rules, with closures written at the
-use site as `closure% fun L i => body`. The block is elaborated twice:
-once against an `unsafe` function-valued closure type to record what each
-site captures, then for real, with the closure type an inductive with one
-constructor per site, `apply` re-elaborating each site's lambda in its
-arm, and a function per `deriving` clause mapping a class method over the
-fields (see NOTES.md, "Derived closure defunctionalization").
+`DefunTest.lean`): a `defun … in … end defun` block holds the domain and
+its rules, with closures written at the use site as `closure% fun L i =>
+body`. The block is elaborated twice: once against an `unsafe`
+function-valued closure type to record what each site captures, then for
+real, with the closure type an inductive with one constructor per site,
+`apply` re-elaborating each site's lambda in its arm, and a function per
+`deriving` clause mapping or folding a class method over the fields.
+`Eval.lean` builds every line this way, deriving `Line.vars`, the support
+of a line from its captures (see NOTES.md, "Derived closure
+defunctionalization").
 
 **Lean as the surface language**: no string parser. `Frontend.lean` declares
 a `kexpr` syntax category (existing Lean tokens only) and commands — `kdef`,

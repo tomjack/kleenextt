@@ -18,11 +18,12 @@ as `closure% fun x y => body`; the block is elaborated twice:
 
 `defun C (x : A) (y : B) : V deriving f (p : P) via K.m := impl … in cmds
 end defun` declares `C` with `C.apply : C → A → B → V`, and `C.f : P → C →
-C` (or `→ Bool`, folding with `||`, when the clause has a `: Bool` result)
-applying `K.m p` to every field, with `⟨impl⟩ : K V` as a local instance
-for the fields of type `V`. `cmds` must contain the inductive `V` (in a
-`mutual` block or alone, with a nullary constructor) and, after it, the
-`mutual` block holding the sites; section variables are not captured. -/
+C` applying `K.m p` to every field, with `⟨impl⟩ : K V` as a local instance
+for the fields of type `V`; a clause `deriving f (p : P) : T folding op e
+via K.m := impl` instead folds the fields' `K.m p` values with `op` from
+`e`. `cmds` must contain the inductive `V` (in a `mutual` block or alone,
+with a nullary constructor) and, after it, the `mutual` block holding the
+sites; section variables are not captured. -/
 
 open Lean Elab Command Term Meta Parser
 open Lean.Parser.Term (bracketedBinderF matchAltExpr)
@@ -39,7 +40,8 @@ syntax (name := closureSite) "closure% " term : term
   throwErrorAt stx "closure% outside a defun block"
 
 def derivingSpec := leading_parser
-  "deriving " >> ident >> many (ppSpace >> Term.bracketedBinder) >> Term.optType >>
+  "deriving " >> ident >> many (ppSpace >> Term.bracketedBinder) >>
+  optional (Term.typeSpec >> " folding " >> termParser maxPrec >> ppSpace >> termParser maxPrec) >>
   " via " >> ident >> " := " >> termParser
 
 @[command_parser] def defunCmd := leading_parser
@@ -137,10 +139,11 @@ structure Site where
   deriving Inhabited
 
 /-- Find the sites in the constants added since `old`, with their captures. -/
-def analyze (old : Environment) (sectionVars : NameSet) : CommandElabM (Array Site) := do
+def analyze (old : Environment) (sectionVars : NameSet) (val : Ident) : CommandElabM (Array Site) := do
   let env ← getEnv
   let consts := env.constants.map₂.toList.filter fun (n, _) => !old.contains n
   let sites ← liftTermElabM do
+    let valName ← resolveGlobalConstNoOverload val
     let ref ← IO.mkRef (#[] : Array Site)
     for (n, ci) in consts do
       let some v := ci.value? | continue
@@ -155,7 +158,13 @@ def analyze (old : Environment) (sectionVars : NameSet) : CommandElabM (Array Si
             if sectionVars.contains d.userName then continue
             if fields.any (·.1 == d.userName) then
               throwError "defun: two captured locals named `{d.userName}` at site {id}"
-            fields := fields.push (d.userName, ← PrettyPrinter.delab (← instantiateMVars d.type))
+            -- Abbreviations over the domain may be declared after the
+            -- inductive block, and nested occurrences of the domain must be
+            -- spelled as in its own constructors.
+            let ty ← Meta.transform (← instantiateMVars d.type) (pre := fun e => do
+              let e' ← whnfR e
+              return if e' == e || (e'.find? (·.isConstOf valName)).isNone then .continue else .visit e')
+            fields := fields.push (d.userName, ← PrettyPrinter.delab ty)
           ref.modify (·.push { id, decl := n, fields })
         return .continue)
     ref.get
@@ -175,19 +184,17 @@ def analyze (old : Environment) (sectionVars : NameSet) : CommandElabM (Array Si
 structure Deriving where
   name : Name
   params : Array (Name × Term)
-  isPred : Bool
+  /-- Result type, combining operation and its unit, for a fold over the
+  fields; an endomap of the closure type when absent. -/
+  fold : Option (Term × Term × Term)
   method : Name
   impl : Term
 
 def parseDeriving (stx : Syntax) : CommandElabM Deriving := do
-  let optType := stx[3]
-  let isPred ← match optType.getArgs with
-    | #[] => pure false
-    | #[t] =>
-      if t[1].isIdent && t[1].getId == `Bool then pure true
-      else throwErrorAt t "defun: a deriving clause's result is omitted or `Bool`"
-    | _ => unreachable!
-  return { name := stx[1].getId, params := ← explicitBinders stx[2], isPred,
+  let fold := match stx[3].getArgs with
+    | #[ty, _, op, unit] => some (⟨ty[1]⟩, ⟨op⟩, ⟨unit⟩)
+    | _ => none
+  return { name := stx[1].getId, params := ← explicitBinders stx[2], fold,
            method := stx[5].getId, impl := ⟨stx[7]⟩ }
 
 def freshIdents (n : Nat) (base : String) : CommandElabM (Array Ident) :=
@@ -246,9 +253,10 @@ def mkInductive (name : Ident) (ctors : Array Syntax) : Syntax :=
   -- The derived functions exist in the first pass only to be referenced.
   let stubs ← derivings.mapM fun (d : Deriving) => do
     let binders ← d.params.mapM fun (x, ty) => mkExplicitBinder (mkIdent x) ty
-    if d.isPred then
-      `(unsafe def $(mkIdent (cloName ++ d.name)):ident $binders:bracketedBinder* (_ : $cloId) : Bool := false)
-    else
+    match d.fold with
+    | some (ty, _, unit) =>
+      `(unsafe def $(mkIdent (cloName ++ d.name)):ident $binders:bracketedBinder* (_ : $cloId) : $ty := $unit)
+    | none =>
       `(unsafe def $(mkIdent (cloName ++ d.name)):ident $binders:bracketedBinder* (c : $cloId) : $cloId := c)
   let cmds1 := cmds1.extract 0 funIdx ++ stubs.map (·.raw) ++ cmds1.extract funIdx cmds1.size
   let saved ← get
@@ -256,7 +264,7 @@ def mkInductive (name : Ident) (ctors : Array Syntax) : Syntax :=
       withEnv (← getEnv).unlockAsync do
         withScope (fun sc => { sc with opts := Elab.async.set sc.opts false }) do
           for c in cmds1 do elabCommand c
-          analyze saved.env sectionVars
+          analyze saved.env sectionVars ⟨retTy⟩
     finally
       modify fun s => { s with scopes := saved.scopes, infoState := saved.infoState }
   if (← get).messages.hasErrors && !saved.messages.hasErrors then return
@@ -292,11 +300,13 @@ def mkInductive (name : Ident) (ctors : Array Syntax) : Syntax :=
     let meth := mkIdent d.method
     let alts ← sites.mapM fun s => do
       let apps ← s.fields.mapM fun (x, _) => `($meth $args:ident* $(mkIdent x):ident)
-      let rhs ← if d.isPred then
-          apps.foldlM (init := ← `(false)) fun acc a => `($acc || $a)
-        else pure (Syntax.mkApp (mkIdent (cloName ++ s.ctor)) apps)
+      let rhs ← match d.fold with
+        | some (_, op, unit) => apps.foldlM (init := unit) fun acc a => `($op $acc $a)
+        | none => pure (Syntax.mkApp (mkIdent (cloName ++ s.ctor)) apps)
       `(matchAltExpr| | $(mkCtorApp cloName s):term => $rhs:term)
-    let resTy ← if d.isPred then `(Bool) else pure (cloId : Term)
+    let resTy : Term := match d.fold with
+      | some (ty, _, _) => ty
+      | none => cloId
     `(partial def $(mkIdent (cloName ++ d.name)):ident $binders:bracketedBinder* ($c : $cloId) : $resTy :=
       let _ : $cls $retTy := ⟨$(d.impl)⟩
       match $c:ident with $alts:matchAlt*)

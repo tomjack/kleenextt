@@ -86,11 +86,11 @@ Brunerie-number probes show that this costs (see `README.md`).
 A derived defunctionalization of the rule-built lines is the natural fix.
 
 The derivation is a Lean command elaborator, `Defun.lean`,
-exercised on a toy domain in `DefunTest.lean`; `Eval.lean` does not use
-it yet. The evaluator is written naively, with closures as `closure% fun
-…` at the use site, inside a `defun … in … end defun` block holding the
-domain and its rules. Everything is Lean compile-time work; the Kleenextt
-binary runs ordinary cctt-style code.
+exercised on a toy domain in `DefunTest.lean` and used by `Eval.lean`.
+The evaluator is written naively, with closures as `closure% fun …` at
+the use site, inside a `defun … in … end defun` block holding the domain
+and its rules. Everything is Lean compile-time work; the Kleenextt binary
+runs ordinary cctt-style code.
 
 The circularity: the generated `Closure` inductive needs one constructor
 per lambda site, with fields typed by the Lean locals that site captures,
@@ -109,9 +109,9 @@ until `Closure` exists. Resolution, two Lean elaboration passes:
    each site becomes its constructor applied to the locals, `Closure.apply`
    re-elaborates each site's lambda in the arm for its constructor, and
    each header clause `deriving f (p : P) via K.m := impl` generates
-   `Closure.f : P → Closure → Closure` (or `→ Bool`, an `||`-fold, when
-   the clause's result is `Bool`) applying the single-method class `K` to
-   every field, with `⟨impl⟩ : K Val` as a local instance; the instances
+   `Closure.f : P → Closure → Closure` applying the single-method class
+   `K` to every field, with `⟨impl⟩ : K Val` as a local instance (or, with
+   `: T folding op e`, folds the fields' values into `T`); the instances
    for the other field types (`IExpr`, `Face`, lists, pairs) are ordinary.
 
 `Closure.mk` and `Closure.apply` exist in both passes, so the rules are
@@ -121,26 +121,43 @@ scheme is not exposed to the internal encodings of matchers, `partial`,
 or `let`. Hygiene: the recorded names are reused verbatim for the arm
 binders, and a site capturing an inaccessible local is reported.
 
-What porting `Eval.lean` needs:
+What the port of `Eval.lean` settled, measured on the open transport of
+the `w22` cube through `global` (`split (λ k => w22 i j k)` normalised
+under `i j`):
 
+| lines | time |
+|---|---|
+| memoised body, substitution deferred, support unknown (before) | 19.7 s |
+| derived closure only, body recomputed per instantiation | > 300 s |
+| closure and memoised body, substitution eager on the captures | > 300 s |
+| memoised body, substitution deferred, support from the captures | 8.8 s |
+
+- The memoised body at a fresh variable is essential; a closure
+  re-running its site at every instantiation, as cubicaltt does, is not
+  usable here.
+- Eager substitution into the captures is not usable either: the
+  captures reach the whole computation graph, which is shared, and a
+  field-wise action copies it as a tree. Substitution into a line stays
+  deferred to instantiation, so the derived `Line.act` is not used.
+- What the derived closure contributes is the support: `Line.vars`,
+  a bitmask of levels folded over the captures, cached in the line and
+  updated through the substitution's images. This is the exact support
+  check the memoised design lacked, and it halves the time.
+- The components of a `Glue` or universe composition peeked at a fresh
+  level cannot be re-instantiated from the type line, since the type
+  reduces at the endpoints, and a closure capturing the level would need
+  the level renamed under substitution, which a field-wise action cannot
+  do. `mkBind` makes them lines directly: the body at the bound level,
+  with the level cleared from the support.
 - Local helper functions captured by lines (`at_`, `atI`, `cod`, `rev`,
-  `item`) have function types, which have no substitution action; they
-  move to the mutual block.
-- A captured `Face` is the face of the component the closure is, so its
-  action drops the levels the substitution fixes; this relies on `actSys`
-  substituting into a component only under a substitution making its face
-  hold, which is what it does.
-- Context sizes captured from an enclosing scope (`transpFillNeg` uses
-  `L` under `L1`) need either a constant instance for `Nat`, sound because
-  a size only bounds the fresh levels from below, or the body to use its
-  own parameter.
-- Memoisation: `Val.line l body` computes the body once at a fresh
-  variable, and this made the open transport over the `w22` cube finish.
-  A derived closure recomputes on every instantiation, as cubicaltt does.
-  Both can be kept: `line (c : Closure) (body : Thunk Val)`, the closure
-  for inspection and substitution, the thunk for instantiation.
+  `item`) have function types, which have no support; they moved to the
+  mutual block.
 - `Val` needs a nullary constructor: the derived functions are `partial`,
-  and `Nonempty Closure` is derived from `Nonempty Val`.
+  and `Nonempty Line` is derived from `Nonempty Val`.
+
+Open: whether `Line.act` earns its place after all, with substitution
+memoised by identity so that sharing survives, and what the closure is
+worth for printing lines.
 
 Alternatives considered:
 

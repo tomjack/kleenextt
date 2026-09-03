@@ -69,8 +69,8 @@ mutual
     match force G l t, force G l u with
     | .ilam _ c, t' => unify (l + 1) (c.apply G (l + 1) (.i (.var l))) (lineApp G (l + 1) t' (.var l))
     | t, .ilam _ c' => unify (l + 1) (lineApp G (l + 1) t (.var l)) (c'.apply G (l + 1) (.i (.var l)))
-    | .line l0 b, t' => unify (l + 1) (act G (l + 1) [(l0, .var l)] b.get) (lineApp G (l + 1) t' (.var l))
-    | t, .line l0 b' => unify (l + 1) (lineApp G (l + 1) t (.var l)) (act G (l + 1) [(l0, .var l)] b'.get)
+    | t, t'@(.line ..) | t@(.line ..), t' =>
+      unify (l + 1) (lineApp G (l + 1) t (.var l)) (lineApp G (l + 1) t' (.var l))
     | .lam _ _ c, .lam _ _ c' => unify (l + 1) (c.apply G (l + 1) (.var l)) (c'.apply G (l + 1) (.var l))
     | .lam _ i c, t' => unify (l + 1) (c.apply G (l + 1) (.var l)) (vApp G (l + 1) t' (.var l) i)
     | t, .lam _ i c' => unify (l + 1) (vApp G (l + 1) t (.var l) i) (c'.apply G (l + 1) (.var l))
