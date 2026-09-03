@@ -23,7 +23,9 @@ and of quotation, the counters of `Stats.lean` (compositions, transports,
 substitutions, line instantiations, …) and the start of the normal form.
 `Bench.lean`, `BenchDeep.lean` and `BenchBrunerie.lean` are the ladder
 towards the Brunerie number, outside the default build:
-`lake build Kleenextt.Bench`.
+`lake build Kleenextt.Bench`. `Hope.lean` continues cctt's file towards
+π₄(S³) (the Hopf construction computes; `generator` takes 9 s), and
+`BenchHope.lean` holds the numbers that still run out of memory.
 
 **Interval theory** (tier 2 of NOTES.md): `Interval.lean` decides the
 equational theory of the free Kleene (and free De Morgan) interval by

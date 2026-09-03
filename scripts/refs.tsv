@@ -19,3 +19,4 @@ elaboration-zoo	git	https://github.com/AndrasKovacs/elaboration-zoo
 implicit-fun-elaboration	git	https://github.com/AndrasKovacs/implicit-fun-elaboration
 cart-cube	git	https://github.com/dlicata335/cart-cube
 agda-cubical	git	https://github.com/agda/cubical
+tomjack-cubical	git	https://github.com/tomjack/cubical#stuff

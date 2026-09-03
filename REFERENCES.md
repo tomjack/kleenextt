@@ -128,6 +128,11 @@ Consult before implementing `hcomp`/`transp` for `Glue`.
 
 ## Other
 
+- **tomjack-cubical** — Tom Jack's fork of the Agda cubical library,
+  branch `stuff`: [tomjack/cubical](https://github.com/tomjack/cubical/tree/stuff).
+  `Stuff/` holds CCHM-style definitions and examples (Eckmann-Hilton as a
+  tube, syllepses, the π₃(JS²) and Brunerie-cobordism experiments); the
+  source of the symmetric `EH` in the Lean implementation.
 - **zhang-demorgan-tutorial** — Tesla Zhang, *A tutorial on implementing
   De Morgan cubical type theory*.
   [arXiv:2210.08232](https://arxiv.org/abs/2210.08232). Third-party

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch reference material into refs/ (gitignored).
 #   arxiv entries -> refs/tex/<slug>/   (extracted e-print source, usually .tex)
-#   git entries   -> refs/repos/<slug>/ (shallow clone)
+#   git entries   -> refs/repos/<slug>/ (shallow clone; <url>#<branch> for a branch)
 #   pdf/url entries -> refs/misc/<slug>.<ext>
 # Manifest: scripts/refs.tsv, tab-separated: <slug> <kind> <locator>
 # Idempotent: existing targets are skipped. Re-fetch one by deleting its dir.
@@ -37,10 +37,11 @@ fetch_arxiv() {
 }
 
 fetch_git() {
-  local slug=$1 url=$2 dest="$refs/repos/$1"
+  local slug=$1 url=$2 dest="$refs/repos/$1" branch=()
+  [[ $url == *#* ]] && { branch=(--branch "${url##*#}"); url=${url%%#*}; }
   [[ -e $dest ]] && { echo "skip  $slug (exists)"; return; }
-  echo "git   $slug ($url)"
-  git clone --depth 1 --quiet "$url" "$dest"
+  echo "git   $slug ($url ${branch[1]:-})"
+  git clone --depth 1 --quiet "${branch[@]}" "$url" "$dest"
 }
 
 fetch_url() {

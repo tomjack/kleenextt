@@ -156,6 +156,17 @@ kdef brunerie : Int := writhe w22
 -- ±2; the sign depends on the orientation conventions.
 #kconv brunerie = pos (suc (suc zero))
 
+-- The Whitehead square directly, as the tube composite `W₂₂'` of
+-- tomjack/cubical `Stuff/Pi3JS2/WhiteheadProduct.agda`.
+kdef W22 : (A : Type) (x : A) (α β : Ω2 A x) → Ω3 A x :=
+  λ A x α β i j k =>
+    hcomp A (λ l => [ (i = 0) ↦ β j (l ∨ k), (i = 1) ↦ β j (l ∨ k), (j = 0) ↦ α i (¬ l ∧ k), (j = 1) ↦ α i (¬ l ∧ k),
+                      (k = 0) ↦ β j l, (k = 1) ↦ α i (¬ l) ])
+      (hcomp A (λ l => [ (i = 0) ↦ β j (l ∧ k), (i = 1) ↦ β j (l ∧ k), (j = 0) ↦ α i (¬ l ∨ k), (j = 1) ↦ α i (¬ l ∨ k),
+                         (k = 0) ↦ α i (¬ l), (k = 1) ↦ β j l ]) x)
+
+kdef brunerieW : Int := writhe (W22 S2 base2 (λ i j => loop2 i j) (λ i j => loop2 i j))
+
 /- The rest of cctt's file, ported with the `hcom`/`coe` sugar; it elaborates
 except `hope`, whose elaboration does not finish.
 
