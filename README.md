@@ -13,6 +13,17 @@ univalence axiom", 2016. arXiv:1611.02108
 
 `lake build` checks everything; the object-level tests are `#kconv`,
 `#kdiffer` and `#kfail` commands that fail the build when they fail.
+The library is precompiled (`precompileModules`), so the evaluator runs
+natively rather than in Lean's interpreter, which is ten times slower;
+running `lean` on a file by hand needs the `--load-dynlib` flags that
+`lake build` passes.
+
+**Measuring**: `#ktime e` normalises `e`, reporting the time of evaluation
+and of quotation, the counters of `Stats.lean` (compositions, transports,
+substitutions, line instantiations, …) and the start of the normal form.
+`Bench.lean`, `BenchDeep.lean` and `BenchBrunerie.lean` are the ladder
+towards the Brunerie number, outside the default build:
+`lake build Kleenextt.Bench`.
 
 **Interval theory** (tier 2 of NOTES.md): `Interval.lean` decides the
 equational theory of the free Kleene (and free De Morgan) interval by
@@ -53,14 +64,21 @@ Values use de Bruijn levels for both ordinary and interval variables.
 Semantic interval binders (`line`) hold their body at a fresh variable as a
 memoised thunk, and their support, computed from the captures of the
 derived closure they are built from (below); instantiation substitutes
-into the body, and substitution into a line is deferred. Substitution is
-otherwise eager, skips values outside their support, and re-runs the
-computation rules on neutral forms, as in cubicaltt. Top-level definitions are lazily evaluated constants outside the
-environment. Every semantic operation takes the current context size as its
-fresh-level supply. Known gaps: no interval metavariables, so an
+into the body, and substitution into a line is deferred. Substitution
+elsewhere skips values outside their support and is otherwise deferred as
+a `sub` node, as in cctt: `whnf` exposes a head by pushing the pending
+substitution one layer, re-running the computation rules on a neutral head
+and deferring the children, so that only what is inspected is ever
+rebuilt; a substitution of a `sub` composes. Top-level definitions are
+lazily evaluated constants outside the environment. The components a
+rule builds for the faces of a `Glue` or a universe composition, and the
+components of pairs and constructors under `transp` and `hcomp`, are
+deferred computations (`lazy`, with the support of their captures), since
+a total face discards all but one of them. Every semantic operation takes
+the current context size as its fresh-level supply. Known gaps: no interval metavariables, so an
 interval-binding lambda must be checked against a known type; the `Glue`
-eta rule is in unification but not in the computation rules; the
-Brunerie-number computation in `Brunerie.lean` does not finish.
+eta rule is in unification but not in the computation rules. The
+Brunerie number of `Brunerie.lean` normalises in about 0.6 s.
 
 **Derived closures** (`Defun.lean`, exercised on a toy domain in
 `DefunTest.lean`): a `defun … in … end defun` block holds the domain and

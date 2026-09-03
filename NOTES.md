@@ -155,9 +155,27 @@ under `i j`):
 - `Val` needs a nullary constructor: the derived functions are `partial`,
   and `Nonempty Line` is derived from `Nonempty Val`.
 
-Open: whether `Line.act` earns its place after all, with substitution
-memoised by identity so that sharing survives, and what the closure is
-worth for printing lines.
+Substitution is now deferred everywhere (cctt's `sub`/`force`): a `sub`
+node records the substitution and its support and is pushed one layer
+when the head is inspected, so eager copying of the computation graph is
+gone and `Line.act` has no role. The rules were also computing every
+face's fiber and composite strictly where a total face keeps one, which
+is exponential in the nesting of universe compositions; those components
+are now `lazy` nodes. Measured natively (the evaluator ran in Lean's
+interpreter before, ten times slower):
+
+| probe | eager | deferred substitution | lazy components |
+|---|---|---|---|
+| `split` of the `w22` cube, open under `i j` | 0.85 s, 201k `hcomp` | 0.20 s, 17k | 0.16 s, 8.7k |
+| one transport further, the `S1` loop, open under `i` | 297 s, 57M | 3.7 s, 47k | 0.5 s, 21k |
+| `brunerie` | > 15 min | > 15 min | 0.6 s, 27k |
+
+cctt's closed-evaluation rule for strict inductive `hcomp` (never inspect
+the sides when there are no fibrant variables) was tried and made no
+difference here: no side is inspected on this computation once
+substitution and components are lazy.
+
+Open: what the closure is worth for printing lines.
 
 Alternatives considered:
 

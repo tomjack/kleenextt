@@ -153,9 +153,11 @@ kdef writhe : Ω3 S2 base2 → Int := λ p => windingS2 (λ i j => snd (split (�
 
 kdef brunerie : Int := writhe w22
 
+-- ±2; the sign depends on the orientation conventions.
+#kconv brunerie = pos (suc (suc zero))
+
 /- The rest of cctt's file, ported with the `hcom`/`coe` sugar; it elaborates
-except `hope`, whose elaboration does not finish. Disabled until `brunerie`
-normalises.
+except `hope`, whose elaboration does not finish.
 
 kdef Ω4 : (A : Type) → A → Type := λ A x => Ω (Ω3 A x) refl
 kdef isSet : Type → Type := λ A => (a b : A) → isProp (Path A a b)

@@ -349,6 +349,24 @@ elab tk:"#knf " e:kexpr : command => do
   let (n, ty) ← orThrowAt e r
   logInfoAt tk m!"{n}\n  : {ty}"
 
+/-- Normalise, reporting the time of evaluation and of quotation, the
+evaluation counters, and the start of the normal form. -/
+elab tk:"#ktime " e:kexpr : command => do
+  let (cxt, G) ← currentCxt
+  let r : Except String (Tm × Globals) := do
+    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
+    pure (t, G)
+  let (t, G) ← orThrowAt e r
+  Stats.reset
+  let t0 ← IO.monoMsNow
+  let v ← IO.lazyPure fun _ => eval G cxt.lvl cxt.env t
+  let t1 ← IO.monoMsNow
+  let n ← IO.lazyPure fun _ => (quote G cxt.lvl v).pretty 0 cxt.names
+  let t2 ← IO.monoMsNow
+  let s ← Stats.read
+  let shown := if n.length > 200 then String.ofList (n.toList.take 200) ++ "…" else n
+  logInfoAt tk m!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {shown}"
+
 elab tk:"#ktype " e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String String := do

@@ -3,3 +3,4 @@ defaultTargets = ["Kleenextt"]
 
 [[lean_lib]]
 name = "Kleenextt"
+precompileModules = true
