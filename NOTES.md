@@ -175,6 +175,24 @@ the sides when there are no fibrant variables) was tried and made no
 difference here: no side is inspected on this computation once
 substitution and components are lazy.
 
+With those in place the profile of the Hopf-construction generator moved
+to the support computation, which walked the strict skeleton of a value
+at every substitution and every line or lazy node built, with closure
+environments nesting; compound values now carry their support in a
+transparent `cached` node (`generator`: 9.0 s to 3.8 s). What remains is
+flat: line instantiation, pushing substitutions, face normal forms.
+
+Not computing: the writhe of the Whitehead square written directly as
+nested `hcomp`s (`W22`, cctt's `w22thing`, whose writhe cctt's own file
+names `error`) and `hope`. Both run out of memory (9 to 17 GB). Their
+cubes are tiny (two `hcomp`s) but have connections in the constructor
+arguments, so every `Glue` built from a face has faces on connections
+that each filler instantiation splits again; the open `split` of the
+`W22` cube has a 41 MB normal form against 111 KB for `w22`. The closed
+computations never need that normal form, so what is retained, and why,
+is the open question; the memoised `sub` heads and `lazy` bodies are the
+suspects (cctt does not memoise forcing).
+
 Open: what the closure is worth for printing lines.
 
 Alternatives considered:

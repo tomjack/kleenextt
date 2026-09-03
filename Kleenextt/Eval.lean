@@ -176,6 +176,9 @@ mutual
     | sub (L : Nat) (σ : Subst) (v : Val) (vars : Nat) (head : Thunk Val)
     /-- A deferred computation with its support. -/
     | lazy (vars : Nat) (body : Thunk Val)
+    /-- A value with its support, so that the support of a compound value
+    is found without walking it. -/
+    | cached (vars : Nat) (v : Val)
     | app (t u : Val) (i : Icit)
     | papp (p : Val) (r : IExpr) (x y : Val)
     | univ
@@ -254,6 +257,7 @@ computations. -/
 partial def Val.whnf : Val → Val
   | .sub _ _ _ _ head => head.get.whnf
   | .lazy _ body => body.get.whnf
+  | .cached _ v => v.whnf
   | v => v
 
 /-- Evaluate an interval expression over indices in an environment. -/
@@ -280,7 +284,7 @@ mutual
     | .var _ | .univ | .interval => 0
     | .flex _ sp => sp.foldl (· ||| go ·.1) 0
     | .lam _ _ c | .ilam _ c => goClo c
-    | .line _ _ vs | .sub _ _ _ vs _ | .lazy vs _ => vs
+    | .line _ _ vs | .sub _ _ _ vs _ | .lazy vs _ | .cached vs _ => vs
     | .app t u _ | .pair t u => go t ||| go u
     | .papp p r x y => go p ||| goI r ||| go x ||| go y
     | .i r => goI r
@@ -321,7 +325,7 @@ mutual
     | .transp a r f => transpApp L a r f u i
     | .hcomp a sys f => hcompApp L a sys f u i
     | .prim n args => prim' L n (args ++ [u])
-    | t => .app t u i
+    | t => cache (.app t u i)
 
   partial def vAppSp (L : Nat) (t : Val) : Spine → Val
     | [] => t
@@ -330,12 +334,12 @@ mutual
   partial def vFst (t : Val) : Val :=
     match t.whnf with
     | .pair u _ => u
-    | t => .fst t
+    | t => cache (.fst t)
 
   partial def vSnd (t : Val) : Val :=
     match t.whnf with
     | .pair _ w => w
-    | t => .snd t
+    | t => cache (.snd t)
 
   partial def papp' (L : Nat) (p : Val) (r : IExpr) (x y : Val) : Val :=
     if r.isZero then x
@@ -345,7 +349,7 @@ mutual
     | .lam _ _ c => c.apply L (.i r)
     | .line .. => lineApp L p r
     | .flex m sp => .flex m ((.i r, .expl) :: sp)
-    | p => .papp p r x y
+    | p => cache (.papp p r x y)
 
   partial def vMeta (m : Nat) : Val :=
     match G.lookupMeta m with
@@ -362,13 +366,13 @@ mutual
 
   partial def eval (L : Nat) (env : Env) : Tm → Val
     | .var i => env.getD i default
-    | .lam x i t => .lam x i (.mk env t)
-    | .ilam x t => .ilam x (.mk env t)
+    | .lam x i t => cache (.lam x i (.mk env t))
+    | .ilam x t => cache (.ilam x (.mk env t))
     | .app t u i => vApp L (eval L env t) (eval L env u) i
     | .univ => .univ
-    | .pi x i a b => .pi x i (eval L env a) (.mk env b)
-    | .sigma x a b => .sigma x (eval L env a) (.mk env b)
-    | .pair t u => .pair (eval L env t) (eval L env u)
+    | .pi x i a b => cache (.pi x i (eval L env a) (.mk env b))
+    | .sigma x a b => cache (.sigma x (eval L env a) (.mk env b))
+    | .pair t u => cache (.pair (eval L env t) (eval L env u))
     | .fst t => vFst (eval L env t)
     | .snd t => vSnd (eval L env t)
     | .letE _ _ t u => eval L (eval L env t :: env) u
@@ -437,6 +441,7 @@ mutual
     | .ilam x c => .ilam x (actClo c)
     | .line .. | .sub .. => act L σ v
     | .lazy _ body => act L σ body.get
+    | .cached _ v => push L σ v
     | .app t u i => vApp L (act L σ t) (act L σ u) i
     | .papp p r x y => papp' L (act L σ p) (σ.apply r) (act L σ x) (act L σ y)
     | .univ => .univ
@@ -483,6 +488,10 @@ mutual
   partial def mkLazy (L : Nat) (c : Line) : Val :=
     .lazy (Line.vars c) (Thunk.mk fun _ => c.apply L .zero)
 
+  /-- Record the support of a newly built compound value. -/
+  partial def cache (v : Val) : Val :=
+    .cached v.vars v
+
   partial def lazyFst (L : Nat) (v : Val) : Val :=
     mkLazy L (closure% fun _ _ => vFst v)
 
@@ -499,8 +508,8 @@ mutual
   partial def prim' (L : Nat) (name : String) (args : List Val) : Val :=
     match name, args with
     | "I", [] => .interval
-    | "PathP", [a, x, y] => .pathP a x y
-    | "Path", [a, x, y] => .pathP (.ilam "_" (.mk [a] (.var 1))) x y
+    | "PathP", [a, x, y] => cache (.pathP a x y)
+    | "Path", [a, x, y] => cache (.pathP (.ilam "_" (.mk [a] (.var 1))) x y)
     | _, _ =>
       match G.con? name with
       | some (_, con) =>
@@ -509,14 +518,14 @@ mutual
           let env := args.reverse
           match con.boundary.find? (fun (φ, _) => (evalI env φ).isOne) with
           | some (_, e) => eval L env e
-          | none => .prim name args
+          | none => cache (.prim name args)
         else .prim name args
       | none =>
         match primDef name with
         | some (arity, body) =>
           if args.length == arity then args.foldl (fun f a => vApp L f a .expl) (eval L [] body)
           else .prim name args
-        | none => .prim name args
+        | none => cache (.prim name args)
 
   /-- Dependent case analysis: reduces on a saturated constructor and, for a
   HIT, on an `hcomp` (the CHM rule, composing over the filler). -/
@@ -527,7 +536,7 @@ mutual
       | some (_, _, body), some (_, con) =>
         if args.length == con.arity then eval L (args.reverse ++ env) body
         else .split P env cases x
-      | _, _ => .split P env cases x
+      | _, _ => cache (.split P env cases x)
     | .hcomp (.prim D []) sys u =>
       match G.data? D with
       | some d =>
@@ -539,8 +548,8 @@ mutual
               splitApp L1 (face L1 α P) (env.map (face L1 α)) cases (lineApp L1 s j)))
           comp' L pline (mkSystem sides) (splitApp L P env cases u) false
         else .split P env cases x
-      | none => .split P env cases x
-    | _ => .split P env cases x
+      | none => cache (.split P env cases x)
+    | _ => cache (.split P env cases x)
 
   /-- `hcomp` at a strict inductive type: constructor-wise, along the field
   telescope, when the base and every side are the same constructor. -/
@@ -554,9 +563,9 @@ mutual
           | .prim c' args' => c' == c && args'.length == args.length
           | _ => false
         if args.length != con.fields.length || !sameCon then .hcomp A sys u
-        else .prim c (hcompFields L 0 con.fields [] sys args)
-      | none => .hcomp A sys u
-    | _ => .hcomp A sys u
+        else cache (.prim c (hcompFields L 0 con.fields [] sys args))
+      | none => cache (.hcomp A sys u)
+    | _ => cache (.hcomp A sys u)
 
   /-- The fields of a constructor-wise `hcomp`; `fills` are the fillers of
   the previous fields, most recent first, which the next field's type may
@@ -594,7 +603,7 @@ mutual
     if r.isOne then u else
     tick .transp <|
     match (lineApp (L + 1) a (.var L)).whnf with
-    | .pi .. => .transp a r u
+    | .pi .. => cache (.transp a r u)
     | .sigma .. =>
       let aline := mkLine L (closure% fun L1 i =>
         match (lineApp L1 a i).whnf with
@@ -622,7 +631,7 @@ mutual
     | .prim n [] => if (G.data? n).isSome then u else .transp a r u
     | .glueTy A sysG => transpGlue L r u A sysG
     | .hcompU A sysE => transpHU L r u A sysE
-    | _ => .transp a r u
+    | _ => cache (.transp a r u)
 
   /-- The codomain of a line of function types at a point, at an argument. -/
   partial def piCod (L : Nat) (a : Val) (i : IExpr) (x : Val) : Val :=
@@ -644,7 +653,7 @@ mutual
       let vline := revLine L w
       let v0 := lineApp L vline .zero
       transp' L (mkLine L (closure% fun L1 i' => piCod L1 a i' (lineApp L1 vline i'))) r (vApp L f v0 i)
-    | _ => .app (.transp a r f) u i
+    | _ => cache (.app (cache (.transp a r f)) u i)
 
   /-- The filler `Transp^i A r u`: a line from `u` to `transp^i A r u`. -/
   partial def transpFill (L : Nat) (a : Val) (r : IExpr) (u : Val) : Val :=
@@ -688,7 +697,7 @@ mutual
     tick .hcomp <|
     let A := A.whnf
     match A with
-    | .pi .. => .hcomp A sys u
+    | .pi .. => cache (.hcomp A sys u)
     | .sigma _ a c =>
       let sys1 := sys.map fun (α, s) => (α, mkLine L (closure% fun L1 j => vFst (lineApp L1 s j)))
       let sys2 := sys.map fun (α, s) => (α, mkLine L (closure% fun L1 j => vSnd (lineApp L1 s j)))
@@ -710,8 +719,8 @@ mutual
     | .prim n [] =>
       match G.data? n with
       | some d => if d.hit then .hcomp A sys u else hcompData L A sys u
-      | none => .hcomp A sys u
-    | _ => .hcomp A sys u
+      | none => cache (.hcomp A sys u)
+    | _ => cache (.hcomp A sys u)
 
   /-- `hcomp` at a function type, applied. -/
   partial def hcompApp (L : Nat) (A : Val) (sys : System Val) (f u : Val) (i : Icit) : Val :=
@@ -720,7 +729,7 @@ mutual
       let sides := sys.map fun (α, s) =>
         (α, mkLine L (closure% fun L1 j => vApp L1 (lineApp L1 s j) (face L1 α u) i))
       hcomp' L (c.apply L u) (mkSystem sides) (vApp L f u i)
-    | _ => .app (.hcomp A sys f) u i
+    | _ => cache (.app (cache (.hcomp A sys f)) u i)
 
   -- Composition in the universe: `hcomp Type [φ ↦ E] A` is a type former
   -- (cubicaltt's `VCompU`). Its elements are `glueU [φ ↦ E] [φ ↦ t] a` with
@@ -731,12 +740,12 @@ mutual
   partial def hcompU' (L : Nat) (A : Val) (sys : System Val) : Val :=
     match sys.total? with
     | some E => lineApp L E .one
-    | none => .hcompU A sys
+    | none => cache (.hcompU A sys)
 
   partial def glueU' (tySys us : System Val) (a : Val) : Val :=
     match us.total? with
     | some t => t
-    | none => .glueU tySys us a
+    | none => cache (.glueU tySys us a)
 
   /-- Transport backwards along a line of types, `E 1 → E 0`. -/
   partial def eqFun (L : Nat) (E t : Val) : Val :=
@@ -748,7 +757,7 @@ mutual
     | none =>
       match b.whnf with
       | .glueU _ _ a => a
-      | b => .unglueU b sys
+      | b => cache (.unglueU b sys)
 
   /-- `hcomp` at a composition in the universe: as at `Glue`, with the
   backward transport as the equivalence. -/
@@ -913,12 +922,12 @@ mutual
   partial def glueTy' (A : Val) (sys : System Val) : Val :=
     match sys.total? with
     | some Te => vFst Te
-    | none => .glueTy A sys
+    | none => cache (.glueTy A sys)
 
   partial def glue' (tySys sys : System Val) (a : Val) : Val :=
     match sys.total? with
     | some t => t
-    | none => .glue tySys sys a
+    | none => cache (.glue tySys sys a)
 
   partial def unglue' (L : Nat) (b : Val) (sys : System Val) : Val :=
     match sys.total? with
@@ -926,7 +935,7 @@ mutual
     | none =>
       match b.whnf with
       | .glue _ _ a => a
-      | b => .unglue b sys
+      | b => cache (.unglue b sys)
 end
 
 end
@@ -1003,7 +1012,7 @@ partial def readback (p : PRen) (occ : Option Nat) (v : Val) : Except String Tm 
   | .lam x i c => pure (.lam x i (← under fun u => c.apply G (p.cod + 1) u))
   | .ilam x c => pure (.ilam x (← underI fun r => c.apply G (p.cod + 1) (.i r)))
   | .line l body _ => pure (.ilam "i" (← underI fun r => act G (p.cod + 1) [(l, r)] body.get))
-  | .sub .. | .lazy .. => panic! "readback: unforced value"
+  | .sub .. | .lazy .. | .cached .. => panic! "readback: unforced value"
   | .app t u i => pure (.app (← rb t) (← rb u) i)
   | .papp q r x y => pure (.papp (← rb q) (← rbI r) (← rb x) (← rb y))
   | .univ => pure .univ
