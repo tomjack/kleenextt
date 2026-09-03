@@ -61,6 +61,48 @@ Tier 2 is the strongest argument for Lean: the novel part of Kleene CCHM is
 precisely an algebraic theory, and Lean can both state it and generate the
 solver.
 
+## Open question: parallel closed evaluation
+
+Closed evaluation runs on one core. Nothing in the evaluator prevents
+using more: it is pure, fresh levels are local to each line so there is
+no name supply to contend for, and `Globals` is read-only during closed
+evaluation. Lean's runtime supports it: `Task.spawn` runs pure closures
+on a thread pool, `Task.get` from a worker grows the pool by one while
+it waits so fork-join cannot starve (documented on `Task.get`), and a
+`Thunk` forced from two threads is computed once, the other forcer
+spinning until the value appears. Results are deterministic. The one
+mutable piece, the stats ref behind `tick`, would serialise every tick
+under contention and needs to be per-task or off.
+
+Independent work is in the sides of a system (`hcompData`'s `sameCon`
+forces every side at a fresh variable, `hcompFields` then composes per
+field), the two components of a pair from `transp` or `hcomp` at Σ, and
+the children of `readback`, which is what drives most of the work in
+`nf` since evaluation is lazy.
+
+Two ways in:
+
+- Fork-join at those points, `Task.spawn` over a list then `Task.get`,
+  with a depth or size cutoff. Keeps laziness; easy to switch off.
+- Speculative: tasks in place of `Thunk.mk` in `mkLine`, `mkLazy` and
+  the `sub` head. The counters put these in the millions, so spawn
+  overhead dominates, and it computes and retains what laziness now
+  skips. Rejected.
+
+Costs: every object reachable from a spawned closure gets atomic
+reference counting, which Lean does a lot of, so single-thread
+throughput drops and several busy cores are needed to break even; a
+worker that forces a thunk another worker is computing burns a core
+spinning, so a memo cell that blocks properly (a promise behind
+`implemented_by`, as `tick` is) may be needed; peak memory rises with
+branches in flight, and memory is the current wall for `W22` and
+`hope`. Unknown: how much of the side computations funnels into shared
+memoised thunks, which bounds the speedup.
+
+Cheapest experiment: parallelise `sameCon` and the `readback` children
+only, ticks off, and run the `Bench` ladder pinned to one core against
+all cores.
+
 ## Derived closure defunctionalization
 
 cctt defunctionalizes every closure in the semantic domain, not for speed
