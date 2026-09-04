@@ -1,4 +1,4 @@
-import Kleenextt.HLevel
+import Kleenextt.Examples.HLevel
 
 /-! Tom Jack's tubes (`Stuff/Pi3JS2/Tubes.agda`, `Extensions.agda`): a tube
 is a partial element on the boundary of a cube, varying along `x`; its path
@@ -6,7 +6,7 @@ of types is the cube type with that boundary at `x`, composing along it
 takes a cube with the boundary at `0` to one with the boundary at `1`, and
 the star is the composition of the constant cube. -/
 
-namespace Kleenextt.Tubes
+namespace Kleenextt.Examples.Tubes
 
 -- `(α,β)`-extensions: an `n`-cube of `α`s whose faces in the other
 -- directions are `β`.
@@ -81,4 +81,4 @@ kdef extFromPath : (A : Type) (a : A) (α β : Ω2 A a)
     (λ f => hcomp (ehPlusPath A a α β f) (λ x => [ (f = 0) ↦ ehPlusFill A a α β 0, (f = 1) ↦ e x ])
               (ehPlusFill A a α β f))
 
-end Kleenextt.Tubes
+end Kleenextt.Examples.Tubes

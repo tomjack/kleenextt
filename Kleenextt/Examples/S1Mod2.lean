@@ -1,11 +1,11 @@
-import Kleenextt.HLevel
+import Kleenextt.Examples.HLevel
 
 /-! `S¹/2`, the circle with `loop ≡ sym loop`, with its 1-truncation built
 into the type as a constructor (`Stuff/Pi3JS2/S1Mod2.agda` and
 `Truncations.agda`, in one HIT): the recursor and eliminator fill the
 truncation case by `hlevel`. -/
 
-namespace Kleenextt.S1Mod2
+namespace Kleenextt.Examples.S1Mod2
 
 open HLevel
 
@@ -78,4 +78,4 @@ kdef bit : Path S1m2 base base → Bool := λ p => transport (λ i => fst (helix
 #kconv (λ (B : Type) (h : isGroupoid B) (b : B) (l : Path B b b) (m : Path (Path B b b) l (λ i => l (¬ i))) (i : I)
   => recS1m2 B h b l m (loop i)) = (λ B h b l m i => l i)
 
-end Kleenextt.S1Mod2
+end Kleenextt.Examples.S1Mod2

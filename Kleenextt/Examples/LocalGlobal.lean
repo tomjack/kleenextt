@@ -1,4 +1,4 @@
-import Kleenextt.Tubes
+import Kleenextt.Examples.Tubes
 
 /-! `Stuff/Pi3JS2/LocalGlobal.agda`: loops of automorphisms of `A` (`Z A`)
 against squares of types at `A` (`Ω2 Type A`), `local` by transport and
@@ -7,7 +7,7 @@ naturality of `local` for the Eckmann-Hilton tubes: `local` of `+EH⋆` is
 the composite of the two loops and `local` of `-EH⋆` the composite the
 other way. -/
 
-namespace Kleenextt.LocalGlobal
+namespace Kleenextt.Examples.LocalGlobal
 open Tubes
 
 kdef loc : (A : Type) → Ω2 Type A → Z A := λ A P => λ i => λ x => transp (λ j => P i j) (¬ i ∨ i) x
@@ -166,4 +166,4 @@ kdef globalEq : (A : Type) (α β : Ω2 Type A) → Path (Z A) (loc A α) (loc A
 kdef globalLocal : (A : Type) (α : Ω2 Type A) → Path (Ω2 Type A) (global A (loc A α)) α :=
   λ A α => globalEq A (global A (loc A α)) α (localGlobal A (loc A α))
 
-end Kleenextt.LocalGlobal
+end Kleenextt.Examples.LocalGlobal

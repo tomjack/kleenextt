@@ -1,8 +1,21 @@
-import Kleenextt.Syntax
-import Kleenextt.Defun
-import Kleenextt.Stats
+import Kleenextt.Core.Syntax
+import Kleenextt.Core.Defun
+import Kleenextt.Core.Stats
 
 /-! Cubical NbE in the style of cubicaltt, on de Bruijn levels.
+
+`transp` and `hcomp` are the primitives (the CHM decomposition), with
+`comp`, `hfill` and `ghcomp` derived. Type formers: Pi (also over `I`),
+Sigma, `PathP`, `Glue`, the universe, and user-declared parameterless
+inductive types and HITs (`kdata`, with `case` as the dependent eliminator,
+computing on `hcomp` by the CHM rule). `transp` for `Glue` follows Cubical
+Agda and Huber, with `ghcomp` in the `∀i.φ` correction so no empty systems
+arise. `hcomp` in the universe is a type former of its own (cubicaltt's
+`VCompU`): its elements are `glueU`, the implicit equivalence is transport
+backwards along the side line, and `lemEq` supplies the fiber contraction,
+so no equivalence proof is ever built. Equivalences are contractible-fiber:
+`Equiv`, `isEquiv`, `fiber` and `isContr` are primitives unfolding to closed
+templates.
 
 Interval variables share the level space with ordinary variables. A value
 lives in a context of some size `L`, mentions only levels below `L`, and may
@@ -13,7 +26,11 @@ support, from the captured values. Interval substitution (`act`) is
 skipped outside the support and otherwise deferred (`sub`), as in cctt:
 exposing the head of a value (`whnf`) pushes a pending substitution one
 layer, re-running the computation rules on a neutral head, since
-substitution can unblock them, and deferring the children.
+substitution can unblock them, and deferring the children. The components
+a rule builds for the faces of a `Glue` or a universe composition, and the
+components of pairs and constructors under `transp` and `hcomp`, are
+deferred computations (`lazy`, with the support of their captures), since
+a total face discards all but one of them.
 
 Evaluation is glued: a top-level definition stays a head (`glued`) with
 its spine and its unfolding, so that conversion and the readback of a
@@ -28,7 +45,7 @@ never restricted to a face as an operation; a head is inspected under `κ`
 a system runs under `κ ∧ γ`. A value built under `κ` is only ever inspected
 under a cofibration entailing `κ`, so faces are kept relative to `κ`. -/
 
-namespace Kleenextt
+namespace Kleenextt.Core
 
 /-- A system: components indexed by maximal, incomparable faces, relative
 to the cofibration the system was built under. -/
@@ -1355,4 +1372,4 @@ def nf (env : Env) (t : Tm) : Tm :=
 
 end
 
-end Kleenextt
+end Kleenextt.Core

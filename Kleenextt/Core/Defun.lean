@@ -28,7 +28,7 @@ sites; section variables are not captured. -/
 open Lean Elab Command Term Meta Parser
 open Lean.Parser.Term (bracketedBinderF matchAltExpr)
 
-namespace Kleenextt.Defun
+namespace Kleenextt.Core.Defun
 
 /-- The first-pass marker around a closure site's body. -/
 def site {α : Sort u} (_id : Nat) (x : α) : α := x
@@ -246,7 +246,7 @@ def mkInductive (name : Ident) (ctors : Array Syntax) : Syntax :=
   let hoas ← params.foldrM (init := retTy) fun (_, a) b => `($a → $b)
   let hoasClo ← `(unsafe structure $cloId where apply : $hoas)
   let mkSite1 (id : Nat) (fn : Term) : CommandElabM Term :=
-    `($(mkIdent (cloName ++ `mk)) (Kleenextt.Defun.site $(quote id) $fn))
+    `($(mkIdent (cloName ++ `mk)) (Kleenextt.Core.Defun.site $(quote id) $fn))
   let (cmds1, _) ← (cmds.mapM (rewriteSites mkSite1)).run 0
   let cmds1 := cmds1.map unsafeify
   let cmds1 := cmds1.set! indIdx (extendMutual cmds1[indIdx]! #[hoasClo])
@@ -318,4 +318,4 @@ def mkInductive (name : Ident) (ctors : Array Syntax) : Syntax :=
   let cmds2 := cmds2.insertIdx! (indIdx + 1) nonempty
   for c in cmds2 do elabCommand c
 
-end Kleenextt.Defun
+end Kleenextt.Core.Defun

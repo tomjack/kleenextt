@@ -4,7 +4,7 @@ import Kleenextt.Frontend
 univalence via `Glue`, and the equivalence induced by a line of types, which
 the kernel uses for `hcomp` in the universe. -/
 
-namespace Kleenextt.Prelude
+namespace Kleenextt.Examples.Prelude
 
 kdata Bool := true | false
 kdata S1 := base | loop (i : I) [ (i = 0) ↦ base, (i = 1) ↦ base ]
@@ -57,4 +57,4 @@ kdef lineToEquivFwd : (E : I → Type) → Equiv (E 0) (E 1) := λ E =>
 
 kdef lineToEquiv : (E : I → Type) → Equiv (E 1) (E 0) := λ E => lineToEquivFwd (λ i => E (¬ i))
 
-end Kleenextt.Prelude
+end Kleenextt.Examples.Prelude

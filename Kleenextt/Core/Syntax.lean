@@ -1,6 +1,6 @@
-import Kleenextt.Interval
+import Kleenextt.Core.Interval
 
-namespace Kleenextt
+namespace Kleenextt.Core
 
 inductive Icit where
   | expl
@@ -210,4 +210,4 @@ partial def Raw.toTm (ns : List String) : Raw → Except String Tm
   | .snd t => do pure (.snd (← t.toTm ns))
   | _ => throw "Raw.toTm: unsupported form in template"
 
-end Kleenextt
+end Kleenextt.Core

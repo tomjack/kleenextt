@@ -1,4 +1,4 @@
-namespace Kleenextt
+namespace Kleenextt.Core
 
 /-! Evaluation counters, kept in a global reference and bumped from pure code
 through an opaque identity function, for the `#ktime` and `#ktrace`
@@ -118,4 +118,4 @@ def residentMB : IO Nat := do
   | _ :: pages :: _ => pure ((pages.trim.toNat?.getD 0) * 4096 / 1048576)
   | _ => pure 0
 
-end Kleenextt
+end Kleenextt.Core

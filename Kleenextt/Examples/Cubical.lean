@@ -1,10 +1,10 @@
-import Kleenextt.Prelude
+import Kleenextt.Examples.Prelude
 
 /-! Cubical tests: paths over the Kleene interval, composition, Booleans, the
 circle, and computation through univalence. -/
 
-namespace Kleenextt.Cubical
-open Kleenextt.Prelude
+namespace Kleenextt.Examples.Cubical
+open Prelude
 
 -- Paths and connections.
 #kconv (λ (A : Type) (x : A) => sym (refl {A} {x})) = (λ A x => refl)
@@ -67,4 +67,4 @@ kdef loop2 : Path S1 base base := pcomp loopPath loopPath
 kdef uaFiller : {A B : Type} (e : Equiv A B) (x : A) → Path B (fst e x) (transport (ua e) x) :=
   λ {A} {B} e x i => unglue (transp (λ j => ua e (i ∧ j)) (¬ i) x)
 
-end Kleenextt.Cubical
+end Kleenextt.Examples.Cubical

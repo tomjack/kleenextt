@@ -1,9 +1,9 @@
-import Kleenextt.Interval
+import Kleenextt.Core.Interval
 
 /-! Compile-time checks of the interval decision procedure. Each `rfl` forces
 the kernel to run the decision procedure over all assignments. -/
 
-namespace Kleenextt.Tests
+namespace Kleenextt.Core.Tests
 
 private def i : IExpr := .var 0
 private def j : IExpr := .var 1
@@ -29,4 +29,4 @@ example : kleene.decEq (.meet i (.neg i)) (.meet j (.neg j)) = false := rfl
 -- Connectedness endpoints behave as in CCHM: `¬` swaps them.
 example : kleene.decEq (.neg .zero) .one = true := rfl
 
-end Kleenextt.Tests
+end Kleenextt.Core.Tests

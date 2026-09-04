@@ -1,12 +1,12 @@
-import Kleenextt.Brunerie
+import Kleenextt.Examples.Brunerie
 
 /-! The rest of cctt's `brunerie_james_revised.cctt`, towards π₄(S³):
 Eckmann-Hilton, the Hopf construction, and the cube whose writhe is the
 `hope` number of `BenchHope.lean`. Not part of the default build:
-`lake build Kleenextt.Hope`. -/
+`lake build Kleenextt.Examples.Hope`. -/
 
-namespace Kleenextt.Brunerie
-open Kleenextt.Prelude
+namespace Kleenextt.Examples.Brunerie
+open Prelude
 
 kdef Ω4 : (A : Type) → A → Type := λ A x => Ω (Ω3 A x) refl
 kdef isSet : Type → Type := λ A => (a b : A) → isProp (Path A a b)
@@ -109,4 +109,4 @@ kdef ouch : Ω3 J2S2 jbase := λ i j k => toJ2S2 (genπ4S3 i j k)
 kdef terribleCheat : J2S2 → S2 :=
   λ x => case x (λ _ => S2) [ jbase ↦ base2, jsurf i j ↦ loop2 i j, jsurfsurf i j a b ↦ sorry ]
 
-end Kleenextt.Brunerie
+end Kleenextt.Examples.Brunerie

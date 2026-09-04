@@ -1,10 +1,10 @@
-import Kleenextt.Interval
-import Kleenextt.Defun
+import Kleenextt.Core.Interval
+import Kleenextt.Core.Defun
 
 /-! A toy semantic domain exercising `defun`: lines as derived closures,
 with substitution and the support check derived over the captured fields. -/
 
-namespace Kleenextt.DefunTest
+namespace Kleenextt.Core.DefunTest
 
 abbrev Subst := List (Nat × IExpr)
 
@@ -147,4 +147,4 @@ private def comp : Val := component G "c" [(4, true)] (.i (.meet (.var 4) (.var 
 #guard lineApp G 3 comp .zero == .tag "c" (.i (.var 6))
 #guard act G 3 [(4, .one)] comp == component G "c" [] (.i (.var 6))
 
-end Kleenextt.DefunTest
+end Kleenextt.Core.DefunTest

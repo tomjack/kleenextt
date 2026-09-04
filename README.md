@@ -19,17 +19,18 @@ running `lean` on a file by hand needs the `--load-dynlib` flags that
 `lake build` passes.
 
 **Measuring**: `#ktime e` normalises `e`, reporting the time of evaluation
-and of quotation, the counters of `Stats.lean` (compositions, transports,
-substitutions, line instantiations, …) and the start of the normal form.
-`Bench.lean`, `BenchDeep.lean` and `BenchBrunerie.lean` are the ladder
-towards the Brunerie number, outside the default build:
-`lake build Kleenextt.Bench`. `Hope.lean` continues cctt's file towards
-π₄(S³) (the Hopf construction computes; `generator` takes 9 s), and
-`BenchHope.lean` holds the numbers that still run out of memory.
+and of quotation, the counters of `Core/Stats.lean` (compositions,
+transports, substitutions, line instantiations, …) and the start of the
+normal form. `Examples/Bench.lean`, `BenchDeep.lean` and
+`BenchBrunerie.lean` are the ladder towards the Brunerie number, outside
+the default build: `lake build Kleenextt.Examples.Bench`.
+`Examples/Hope.lean` continues cctt's file towards π₄(S³) (the Hopf
+construction computes; `generator` takes 9 s), and `BenchHope.lean` holds
+the numbers that still run out of memory.
 
-**Interval theory** (tier 2 of NOTES.md): `Interval.lean` decides the
+**Interval theory** (tier 2 of NOTES.md): `Core/Interval.lean` decides the
 equational theory of the free Kleene (and free De Morgan) interval by
-evaluation into the finite algebra generating the variety; `Tests.lean` pins
+evaluation into the finite algebra generating the variety; `Core/Tests.lean` pins
 the expected (in)equations at compile time. The kernel uses the Kleene
 theory for conversion of interval expressions. System faces are
 conjunctions of `(i = 0)`/`(i = 1)` on variables, as in cubicaltt; a
@@ -42,7 +43,7 @@ NOTES.md).
 core terms with de Bruijn indices, NbE with first-order closures and levels
 in values, metavariables solved by pattern unification, bidirectional
 check/infer with Agda-style insertion of implicit arguments and lambdas
-(positional and named), type-in-type. `Syntax.lean`, `Eval.lean`,
+(positional and named), type-in-type. `Core/Syntax.lean`, `Eval.lean`,
 `Unify.lean`, `Check.lean`. Metavariables and builtins live in a `Globals`
 record passed explicitly (a section variable) rather than in a global ref;
 each top-level definition is zonked and must leave no unsolved metas. This
@@ -80,17 +81,17 @@ a total face discards all but one of them. Every semantic operation takes
 the current context size as its fresh-level supply. Known gaps: no interval metavariables, so an
 interval-binding lambda must be checked against a known type; the `Glue`
 eta rule is in unification but not in the computation rules. The
-Brunerie number of `Brunerie.lean` normalises in about 0.6 s.
+Brunerie number of `Examples/Brunerie.lean` normalises in about 0.6 s.
 
-**Derived closures** (`Defun.lean`, exercised on a toy domain in
-`DefunTest.lean`): a `defun … in … end defun` block holds the domain and
+**Derived closures** (`Core/Defun.lean`, exercised on a toy domain in
+`Core/DefunTest.lean`): a `defun … in … end defun` block holds the domain and
 its rules, with closures written at the use site as `closure% fun L i =>
 body`. The block is elaborated twice: once against an `unsafe`
 function-valued closure type to record what each site captures, then for
 real, with the closure type an inductive with one constructor per site,
 `apply` re-elaborating each site's lambda in its arm, and a function per
 `deriving` clause mapping or folding a class method over the fields.
-`Eval.lean` builds every line this way, deriving `Line.vars`, the support
+`Core/Eval.lean` builds every line this way, deriving `Line.vars`, the support
 of a line from its captures (see NOTES.md, "Derived closure
 defunctionalization").
 
@@ -103,6 +104,7 @@ recognised at the head of an application; systems are written
 `[ (i = 0) ↦ u, (i = 1) ↦ v ]`, and binding forms as `hcomp A (λ j => […]) u`,
 `transp (λ i => A) r u`, `comp (λ i => A) (λ i => […]) u`; faces are
 `(i = 0)`/`(i = 1)` on variables, conjoined by juxtaposition. Object-level
-programs live in ordinary Lean files: `Examples.lean` (MLTT and implicits),
-`Prelude.lean` (paths, `ua`, `uaβ`, `lineToEquiv`), `Cubical.lean` (tests,
-including transport around the circle through univalence).
+programs live in ordinary Lean files under `Examples/`: `ElabZoo.lean`
+(MLTT and implicits), `Prelude.lean` (paths, `ua`, `uaβ`, `lineToEquiv`),
+`Cubical.lean` (tests, including transport around the circle through
+univalence).

@@ -18,6 +18,15 @@ So the target is roughly "cctt with the Kleene interval": a small standalone
 kernel in the CCHM style plus a real elaborator with first-class implicit
 arguments in the smalltt/elaboration-zoo style.
 
+## Known gaps
+
+- No interval metavariables, so an interval-binding lambda must be checked
+  against a known type.
+- The `Glue` eta rule is in unification but not in the computation rules.
+- Implicit insertion is §2.6 of Kovács' ICFP 2020 paper only; first-class
+  polymorphism (postponed insertion, elaboration-zoo stage 06) is not
+  implemented.
+
 ## Open question: build in the validity constraint?
 
 System faces are conjunctions of `(i = 0)`/`(i = 1)` on variables, and a
@@ -124,11 +133,11 @@ closures. The pressure has arrived with the semantic interval binders:
 `Val.line` holds its body as a memoised `Thunk` at a fresh variable, and
 substitution into it is deferred to instantiation. It cannot be inspected,
 so the support check treats it as mentioning every variable, and the
-Brunerie-number probes show that this costs (see `README.md`).
+Brunerie-number probes show that this costs (the table below).
 A derived defunctionalization of the rule-built lines is the natural fix.
 
-The derivation is a Lean command elaborator, `Defun.lean`,
-exercised on a toy domain in `DefunTest.lean` and used by `Eval.lean`.
+The derivation is a Lean command elaborator, `Core/Defun.lean`,
+exercised on a toy domain in `Core/DefunTest.lean` and used by `Core/Eval.lean`.
 The evaluator is written naively, with closures as `closure% fun …` at
 the use site, inside a `defun … in … end defun` block holding the domain
 and its rules. Everything is Lean compile-time work; the Kleenextt binary
@@ -163,7 +172,7 @@ scheme is not exposed to the internal encodings of matchers, `partial`,
 or `let`. Hygiene: the recorded names are reused verbatim for the arm
 binders, and a site capturing an inaccessible local is reported.
 
-What the port of `Eval.lean` settled, measured on the open transport of
+What the port of `Core/Eval.lean` settled, measured on the open transport of
 the `w22` cube through `global` (`split (λ k => w22 i j k)` normalised
 under `i j`):
 
@@ -314,14 +323,14 @@ stays a head with its spine and its unfolding, compared or quoted by the
 spine first and unfolded only when that fails. `notEqSym k i` as a type,
 an `hcomp` in the universe over `ua` and `J`, took 15 s to convert with
 itself unfolded, and checking the square over it converts it many times;
-`S1Mod2.lean` now checks in under a second.
+`Examples/S1Mod2.lean` now checks in under a second.
 
 The cheat-free `bit` of tomjack/cubical `Stuff/Pi3JS2` computes.
-`J2S2.lean` builds the family over `J₂S²` with fibre `S1t × S2m2` (the
+`Examples/J2S2.lean` builds the family over `J₂S²` with fibre `S1t × S2m2` (the
 truncated circle and sphere, truncations as constructors), `global
 rotLoopsMod2` over `surf₁` and over `surf₂` the `2,2`-extension that
-`rotLoopsMod2Mod2` gives through `LocalGlobal` (`Tubes.lean`,
-`LocalGlobal.lean`, with `glueU` in the surface syntax for `thing2`, and
+`rotLoopsMod2Mod2` gives through `LocalGlobal` (`Examples/Tubes.lean`,
+`Examples/LocalGlobal.lean`, with `glueU` in the surface syntax for `thing2`, and
 the function underlying `2,2-diag-corollary2` written directly).
 Transport along it takes the Hopf generator `η surf₁` of `π₃(J₂S²)` to
 `π₂∥S²/2∥₂`, `Code` into `hGroupoid` to `π₁∥S¹/2∥₁`, and `Helix/2` to
@@ -332,7 +341,7 @@ chain is seconds; what made it so were glued evaluation, the unifier's
 shortcuts for the same object and the same closure, and `lineApp`
 keeping a definition glued so that boundary values are quoted by name.
 
-From it, `π₄(S³)` is nontrivial (`Pi4S3.lean`, outside the default
+From it, `π₄(S³)` is nontrivial (`Examples/Pi4S3.lean`, outside the default
 build): `π4S3Nontrivial : Path (Ω⁴S³) (η loop3) refl → Empty`. The
 invariant composes `bit` with `Ω⁴S³ → Ω³J₂S²`, transport along `global3`
 of the surfaces of `J₂S²` over `loop3`, which is cctt's `hope` with its

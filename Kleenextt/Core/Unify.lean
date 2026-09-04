@@ -1,10 +1,10 @@
-import Kleenextt.Eval
+import Kleenextt.Core.Eval
 
 /-! Pattern unification, after elaboration-zoo 04. A metavariable applied to
 distinct bound variables (ordinary or interval) is solved by inverting the
 spine into a partial renaming and reading the other side back under it. -/
 
-namespace Kleenextt
+namespace Kleenextt.Core
 
 abbrev UnifyM := StateT Globals (Except String)
 
@@ -186,4 +186,4 @@ mutual
       unify l s (face G l [] α t)
 end
 
-end Kleenextt
+end Kleenextt.Core

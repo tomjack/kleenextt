@@ -1,4 +1,4 @@
-import Kleenextt.Prelude
+import Kleenextt.Examples.Prelude
 
 /-! The Brunerie-like number of cctt's `tests/brunerie_james_revised.cctt`
 (up to `brunerie`), written in CCHM style after the cubicaltt original
@@ -6,8 +6,8 @@ import Kleenextt.Prelude
 encodings, Cubical Agda's `isPropIsContr` and `isoToIsEquiv`, direct `J`.
 Equivalences are contractible-fiber. -/
 
-namespace Kleenextt.Brunerie
-open Kleenextt.Prelude
+namespace Kleenextt.Examples.Brunerie
+open Prelude
 
 kdata Nat := zero | suc (n : Nat)
 kdata Int := pos (n : Nat) | neg (n : Nat)
@@ -267,4 +267,4 @@ kdef terribleCheat : J2S2 → S2 :=
 kdef hope : Int := writhe (λ i j k => terribleCheat (ouch i j k))
 -/
 
-end Kleenextt.Brunerie
+end Kleenextt.Examples.Brunerie

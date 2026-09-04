@@ -1,4 +1,4 @@
-import Kleenextt.S2Mod2
+import Kleenextt.Examples.S2Mod2
 
 /-! `Stuff/Pi3JS2/J2S2.agda`: the family over `J₂S²` into the universe
 with fibre `S¹ × ∥S²/2∥₂`, `global rotLoopsMod2` over `surf₁` and over
@@ -6,7 +6,7 @@ with fibre `S¹ × ∥S²/2∥₂`, `global rotLoopsMod2` over `surf₁` and ove
 `LocalGlobal`. Transport along it takes `π₃(J₂S²)` to `π₂∥S²/2∥₂`, then
 `Bool`; `bit` is the value on the Hopf generator `η surf₁`. -/
 
-namespace Kleenextt.J2S2
+namespace Kleenextt.Examples.J2S2
 
 open HLevel S2Mod2 Tubes LocalGlobal
 
@@ -47,4 +47,4 @@ kdef bitJ : Bool := bit3 gen
 #kconv bit3 (λ i j k => jbase) = false
 #kconv bit3 (pcomp gen gen) = false
 
-end Kleenextt.J2S2
+end Kleenextt.Examples.J2S2

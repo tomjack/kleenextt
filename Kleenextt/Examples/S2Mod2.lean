@@ -1,13 +1,13 @@
-import Kleenextt.S1Mod2
-import Kleenextt.Tubes
-import Kleenextt.LocalGlobal
+import Kleenextt.Examples.S1Mod2
+import Kleenextt.Examples.Tubes
+import Kleenextt.Examples.LocalGlobal
 
 /-! `S²/2`, the sphere with `surf ≡ flip surf`, with its 2-truncation built
 in as a 4-dimensional constructor (`Stuff/Pi3JS2/S2Mod2.agda`), and its
 code family into the groupoid of groupoids, giving `π₂S²/2 → Bool`. The
 constructors are `sbase`, `surf`, `smod2`, `strunc`, next to `S1m2`'s. -/
 
-namespace Kleenextt.S2Mod2
+namespace Kleenextt.Examples.S2Mod2
 
 open HLevel
 
@@ -172,4 +172,4 @@ kdef surfSq : Ω2 S2m2 sbase := λ i j => surf i j
   (m : Path (Path (Path B b b) refl refl) sf (λ i j => sf j i)) (i j : I)
   => recS2m2 B h b sf m (surf i j)) = (λ B h b sf m i j => sf i j)
 
-end Kleenextt.S2Mod2
+end Kleenextt.Examples.S2Mod2

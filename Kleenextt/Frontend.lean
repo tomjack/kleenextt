@@ -1,19 +1,22 @@
 import Lean
-import Kleenextt.Check
+import Kleenextt.Core.Check
 
 /-! Lean as the surface language: object-level programs are written directly in
-Lean files through the `kexpr` syntax category, and the `kdef`/`#knf`/`#ktype`/
-`#kconv`/`#kdiffer`/`#kfail` commands run the Kleenextt elaborator at
+Lean files through the `kexpr` syntax category, and the `kdef`/`kdata`/`#knf`/
+`#ktype`/`#kconv`/`#kdiffer`/`#kfail` commands run the Kleenextt elaborator at
 elaboration time, so object-level type errors surface as ordinary Lean errors.
+`#ktime e` normalises `e`, reporting the time of evaluation and of quotation,
+the counters of `Core/Stats.lean` and the start of the normal form.
 Only existing Lean tokens are used, so the grammar reserves nothing new at the
 term level; the cubical primitives are ordinary identifiers that `toRaw`
 recognises at the head of an application. System faces are conjunctions of
 `(i = 0)`/`(i = 1)` on variables, written by juxtaposition as in cubicaltt;
 no other cofibrations can be written. -/
 
-namespace Kleenextt
+namespace Kleenextt.Frontend
 
 open Lean Elab Command
+open Core
 
 /-- A checked top-level object definition; `ty` and `tm` are metavariable-free
 core terms in the context of the preceding definitions. -/
@@ -586,4 +589,4 @@ elab "#kfail " e:kexpr : command => do
   | .error _ => pure ()
   | .ok _ => throwErrorAt e "expected an elaboration error, but the term elaborated"
 
-end Kleenextt
+end Kleenextt.Frontend

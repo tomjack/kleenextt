@@ -1,10 +1,10 @@
-import Kleenextt.Brunerie
+import Kleenextt.Examples.Brunerie
 
 /-! `hlevel n h`: the cube the enclosing path binders ask for, filled in a
 type of h-level `n` by `h`, with the boundary read off the binders' types
 (kangrongji's `extend`, with the boundary supplied by the elaborator). -/
 
-namespace Kleenextt.HLevel
+namespace Kleenextt.Examples.HLevel
 
 kdef isSet : Type → Type := λ A => (a b : A) → isProp (Path A a b)
 kdef isGroupoid : Type → Type := λ A => (a b : A) → isSet (Path A a b)
@@ -232,4 +232,4 @@ kdef cubeContr : (A : Type) (h : isContr A) (a b : A) (p q : Path A a b) (r s : 
 
 #kfail (λ (A : Type) (h : isSet A) (a b : A) => λ (i : I) => hlevel 2 h)
 
-end Kleenextt.HLevel
+end Kleenextt.Examples.HLevel
