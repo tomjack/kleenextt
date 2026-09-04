@@ -151,6 +151,18 @@ private def isEquivTm : Tm := template <| lams ["A", "B", "f"] <|
 private def equivTm : Tm := template <| lams ["A", "B"] <|
   .sigma "f" (.pi "_" .expl (v "A") (v "B")) (ap (v "isEquiv") [v "A", v "B", v "f"])
 
+/-- `isOfHLevel n`: `isContr`, then `(x y : A) → isOfHLevel (n-1) (Path A x y)`
+with `isProp` at `1`, as in Cubical Agda. -/
+def isOfHLevelTm (n : Nat) : Tm := template <| lams ["A"] <| go n (v "A")
+where
+  go : Nat → Raw → Raw
+    | 0, a => ap (v "isContr") [a]
+    | n + 1, a =>
+      let x := s!"x{n}"
+      let y := s!"y{n}"
+      let path := ap (v "Path") [a, v x, v y]
+      .pi x .expl a (.pi y .expl a (if n == 0 then path else go n path))
+
 /-- Primitives defined by unfolding: arity and closed definition. -/
 private def primDef : String → Option (Nat × Tm)
   | "isContr" => some (1, isContrTm)
@@ -468,6 +480,16 @@ mutual
       | some (v, _) => v.get
       | none => panic! s!"eval: unknown definition {n}"
     | .split P cases x => splitApp L κ (eval L κ env P) env cases (eval L κ env x)
+    | .extend n a h sys vars =>
+      -- The cube variables are peeked at fresh levels, where the faces are
+      -- the cube's; the construction is made there and the actual interval
+      -- expressions substituted, so that it is stable under connections.
+      let m := vars.length
+      let ks := (List.range m).zip vars
+      let σ : Subst := ks.map fun (k, idx) => (L + k, evalI env (.var idx))
+      let env' := ks.foldl (fun e (k, idx) => e.set idx (.i (.var (L + k)))) env
+      let L' := L + m
+      act L κ σ (extend' L' κ n (eval L' κ env' a) (eval L' κ env' h) (evalSysFlat L' κ env' sys))
 
   /-- Evaluate a system whose components bind an interval variable, giving
   components of line type, each in the environment restricted to its face. -/
@@ -999,6 +1021,39 @@ mutual
         (α, mkLine L (closure% fun L1 j => papp' L1 κα (vApp L1 κα p w .expl) j c w)))
       ++ (invFormula (κ.apply θ.cof) false).map (fun β => (β, constLine L (face L κ β c)))
     hcomp' L κ X (mkSystem κ sides) c
+
+  /-- Fill the cube over the variables the faces of `sys` mention in the
+  type `A`, constant over them, given `h : isOfHLevel n A`, with `n` the
+  dimension (kangrongji's `extend`). The last variable is peeled off: the
+  remaining faces become lines in it, and an `(n-1)`-cube is filled in the
+  path type between the two faces on it, of h-level `n - 1` by `h`; a
+  proposition fills a line by an `hcomp` correcting the endpoints of
+  `h x₀ x₁`, and a contractible type fills by `ext`. -/
+  partial def extend' (L : Nat) (κ : Face) (n : Nat) (A h : Val) (sys : System Val) : Val :=
+    let sys := System.restrict κ sys
+    match sys.total? with
+    | some v => v
+    | none =>
+    let ls := (sys.map fun (α, _) => α.map (·.1)).flatten.eraseDups
+    match ls.max?, n with
+    | none, 0 => vFst L κ h
+    | none, _ => panic! "hlevel: no cube variables at a positive level"
+    | some _, 0 => ext L κ A h sys
+    | some l, 1 =>
+      let x0 := (sys.find? (·.1 == [(l, false)])).map (·.2) |>.getD (panic! "hlevel: missing face")
+      let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
+      let side (x : Val) := mkLine L (closure% fun L1 j =>
+        papp' L1 κ (vApp L1 κ (vApp L1 κ h x .expl) x .expl) j x x)
+      let base := papp' L κ (vApp L κ (vApp L κ h x0 .expl) x1 .expl) (.var l) x0 x1
+      hcomp' L κ A (mkSystem κ [([(l, false)], side x0), ([(l, true)], side x1)]) base
+    | some l, n + 2 =>
+      let x0 := (sys.find? (·.1 == [(l, false)])).map (·.2) |>.getD (panic! "hlevel: missing face")
+      let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
+      let P := prim' L κ "Path" [A, x0, x1]
+      let h' := vApp L κ (vApp L κ h x0 .expl) x1 .expl
+      let sys' := sys.filterMap fun (α, w) =>
+        if α.mentions l then none else some (α, Val.line l (Thunk.pure w) (clearLevel w.vars l))
+      lineApp L κ (extend' L κ (n + 1) P h' sys') (.var l)
 
   /-- `transp^i (Glue [φ ↦ (T, e)] A) r b₀`, after Cubical Agda / Huber:
   the `∀i.φ` correction is folded into a `ghcomp`-based composition in `A`,

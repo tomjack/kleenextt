@@ -20,6 +20,10 @@ structure Cxt where
   types : List (String × NameOrigin × Val) := []
   bds : List BD := []
   lvl : Nat := 0
+  /-- What the term being checked must be on the faces of the enclosing
+  path binders: for each, the level from which later binders apply to the
+  value, the face, and the value there. -/
+  boundary : List (Nat × Face × Val) := []
 
 namespace Cxt
 
@@ -33,6 +37,7 @@ def bind (cxt : Cxt) (x : String) (a : Val) (origin := NameOrigin.source) : Cxt 
   types := (x, origin, a) :: cxt.types
   bds := .bound :: cxt.bds
   lvl := cxt.lvl + 1
+  boundary := cxt.boundary
 
 /-- Extend with a definition. -/
 def define (cxt : Cxt) (x : String) (t a : Val) : Cxt where
@@ -40,6 +45,7 @@ def define (cxt : Cxt) (x : String) (t a : Val) : Cxt where
   types := (x, .source, a) :: cxt.types
   bds := .defined :: cxt.bds
   lvl := cxt.lvl + 1
+  boundary := cxt.boundary
 
 /-- Restrict to a face: the interval variables it fixes become constants,
 which fresh metavariables must not abstract over. -/
@@ -48,7 +54,9 @@ def restrict (G : Globals) (cxt : Cxt) (α : Face) : Cxt :=
     env := cxt.env.map (face G cxt.lvl [] α)
     types := cxt.types.map fun (x, o, a) => (x, o, face G cxt.lvl [] α a)
     bds := cxt.bds.zipWith (fun bd idx => if α.mentions (cxt.lvl - idx - 1) then .defined else bd)
-      (List.range cxt.bds.length) }
+      (List.range cxt.bds.length)
+    boundary := cxt.boundary.filterMap fun (l0, β, v) =>
+      (α.meet β).map fun _ => (l0, β.minus α, face G cxt.lvl [] α v) }
 
 def showVal (G : Globals) (cxt : Cxt) (v : Val) : String :=
   (quote G cxt.lvl v).pretty 0 cxt.names
@@ -194,7 +202,8 @@ mutual
       else
         fallback cxt (.lam x k t) (.pi x' i a c)
     | .lam x _ t, .pathP A x0 x1 =>
-      let cxt' := cxt.bind x .interval
+      let cxt' := { cxt.bind x .interval with
+        boundary := (cxt.lvl + 1, [(cxt.lvl, false)], x0) :: (cxt.lvl + 1, [(cxt.lvl, true)], x1) :: cxt.boundary }
       let t ← check cxt' t (lineApp G cxt'.lvl [] A (.var cxt.lvl))
       let G ← get
       -- The endpoints are evaluated in the restricted context rather than
@@ -215,6 +224,29 @@ mutual
       let vt ← evalC cxt t
       let u ← check (cxt.define x vt va) u a'
       return .letE x a t u
+    | .hlevel n h, a =>
+      -- The boundary the enclosing path binders ask for, brought to the
+      -- current context by applying the later binders.
+      let entries : List (Face × Val) := cxt.boundary.map fun (l0, α, v) =>
+        let v := (List.range (cxt.lvl - l0)).foldl (init := v) fun v k =>
+          let l := l0 + k
+          let idx := cxt.lvl - l - 1
+          match cxt.types[idx]?, cxt.bds[idx]?, cxt.env[idx]? with
+          | some (_, _, Val.interval), _, some (.i r) => lineApp G cxt.lvl [] v r
+          | some (_, o, _), some .bound, some e =>
+            vApp G cxt.lvl [] v e (if o == .inserted then .impl else .expl)
+          | _, _, _ => v
+        (α, v)
+      let ls := ((entries.map fun (α, _) => α.map (·.1)).flatten.eraseDups.toArray.qsort (· < ·)).toList
+      unless ls.length == n do
+        throw s!"hlevel: {ls.length} cube variables but level {n}"
+      if Val.vars G a &&& levelSet ls != 0 then
+        throw "hlevel: the type depends on the cube variables (not supported yet)"
+      let hty := vApp G cxt.lvl [] (eval G 0 [] [] (isOfHLevelTm n)) a .expl
+      let h ← check cxt h hty
+      let sys := entries.map fun (α, v) => (cxt.quoteI α.toIExpr, quote G cxt.lvl v)
+      let vars := ls.map fun l => cxt.lvl - l - 1
+      return .extend n (quote G cxt.lvl a) h sys vars
     | .hole, _ => freshMeta cxt
     | .sorry, _ => pure (.prim "sorry")
     | .pair t u, .sigma _ a c =>
@@ -343,6 +375,7 @@ mutual
       let t ← check cxt t va
       pure (t, va)
     | .sorry => throw "sorry needs a known type"
+    | .hlevel .. => throw "hlevel needs a known type"
     | .split x P cases => do
       let (x, xty) ← infer cxt x
       let (x, xty) ← insertAll cxt x xty
@@ -577,6 +610,7 @@ partial def zonk (G : Globals) (env : Env) (l : Nat) : Tm → Except String Tm
   | .unglue b sys => do pure (.unglue (← z b) (← zflat sys))
   | .glueU tySys us a => do pure (.glueU (← zsys tySys) (← zflat us) (← z a))
   | .unglueU b sys => do pure (.unglueU (← z b) (← zsys sys))
+  | .extend n a h sys vars => do pure (.extend n (← z a) (← z h) (← zflat sys) vars)
   | .split P cases x => do
     let cases' ← cases.mapM fun (c, names, body) => do
       let (nf, ni) := match G.con? c with

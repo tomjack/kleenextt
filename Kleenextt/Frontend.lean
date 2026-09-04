@@ -70,6 +70,7 @@ syntax:max ident : kexpr
 syntax:max "Type" : kexpr
 syntax:max "sorry" : kexpr
 syntax:max "case " kexpr:max kexpr:max "[" kcase,* "]" : kexpr
+syntax:max "hlevel " num kexpr:max : kexpr
 syntax:max "_" : kexpr
 syntax:max num : kexpr
 syntax:max "(" kexpr ")" : kexpr
@@ -231,6 +232,7 @@ partial def toRaw : TSyntax `kexpr → Except String Raw
     | [] => throw "empty tuple"
   | `(kexpr| [$entries,*]) => do pure (.system (← entriesToRaw toRaw entries.getElems.toList))
   | `(kexpr| sorry) => pure .sorry
+  | `(kexpr| hlevel $n:num $h) => do pure (.hlevel n.getNat (← toRaw h))
   | `(kexpr| case $x $P [$cs,*]) => do
     let cases ← cs.getElems.toList.mapM fun (c : TSyntax `kcase) => do
       match c with

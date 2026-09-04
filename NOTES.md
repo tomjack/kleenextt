@@ -278,6 +278,23 @@ substitution pushed through a `case`, 25.7M times, now 105k. `hope`,
 which ran out of 34 GB in 12 minutes, is +1 in 310 s with memory flat at
 2.8 GB from the first half minute (5.9M `hcomp`s).
 
+`hlevel n h` fills the cube the enclosing path binders ask for, in a type
+of h-level `n`, from `h : isOfHLevel n A` (`isContr`, then `(x y : A) →
+isOfHLevel (n-1) (Path A x y)`, with `isProp` at 1). The construction is
+kangrongji's `extend` (the `extend-all` branch of `kangrongji/cubical`,
+commit `b46c4be`, `HLevels/ExtendConstruction.agda`): peel the last cube
+variable, fill an `(n-1)`-cube in the path type between its two faces,
+whose h-level is `h x₀ x₁`, down to `extend₁` for a proposition and `ext`
+for a contractible type. What the branch does not do, and what makes
+`extend` painful in Cubical Agda, is read the boundary off the goal: here
+the checker records, at each path binder, the endpoints as the faces the
+body must respect, applies later binders to them, and hands the system to
+`hlevel`. The core term keeps the cube variables; evaluation peeks them
+at fresh levels, builds the cube there and substitutes, so it is stable
+under connections. Not yet: a type varying over the cube (needs
+`isOfHLevelPathP'`) and a cube of dimension above the level (needs
+`isOfHLevelSuc`); both are ports of Cubical lemmas.
+
 Open: what the closure is worth for printing lines.
 
 Alternatives considered:

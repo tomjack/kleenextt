@@ -45,6 +45,9 @@ inductive Raw where
   | glue (sys : List (Raw × Raw)) (a : Raw)
   | unglue (b : Raw)
   | split (x P : Raw) (cases : List (String × List String × Raw))
+  /-- `hlevel n h`: the cube the enclosing path binders ask for, filled by
+  the h-level `n` proof `h` of its type. -/
+  | hlevel (n : Nat) (h : Raw)
   | sorry
   deriving Repr, Inhabited
 
@@ -94,6 +97,10 @@ inductive Tm where
   /-- Dependent case analysis: each case body binds the constructor's fields
   and interval variables, last one at index 0. -/
   | split (P : Tm) (cases : List (String × List String × Tm)) (x : Tm)
+  /-- The cube over the interval variables `vars` (indices, outermost
+  first) in the type `a`, with the boundary `sys` on their faces, filled
+  by the h-level `n` proof `h`. -/
+  | extend (n : Nat) (a h : Tm) (sys : List (IExpr × Tm)) (vars : List Nat)
   deriving Repr, Inhabited
 
 namespace Tm
@@ -162,6 +169,7 @@ partial def pretty (p : Nat) (ns : List String) : Tm → String
       let names := names.map (freshen ns)
       s!"{" ".intercalate (c :: names)} ↦ {pretty 0 (names.reverse ++ ns) body}"
     par p 2 s!"case {pretty 3 ns x} {pretty 3 ns P} [{", ".intercalate cs}]"
+  | extend n _ h sys _ => par p 2 s!"hlevel {n} {pretty 3 ns h} {prettySysFlat ns sys}"
 where
   /-- A face as juxtaposed `(i = 0)`/`(i = 1)` atoms. -/
   prettyFace (ns : List String) : IExpr → String
