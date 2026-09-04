@@ -89,6 +89,11 @@ def quoteI (cxt : Cxt) (r : IExpr) : IExpr :=
 def quoteSysFlat (G : Globals) (cxt : Cxt) (sys : System Val) : List (IExpr × Tm) :=
   sys.map fun (α, t) => (cxt.quoteI α.toIExpr, quote G cxt.lvl t)
 
+/-- A system of lines, each component under its bound variable. -/
+def quoteSys (G : Globals) (cxt : Cxt) (sys : System Val) : List (IExpr × Tm) :=
+  sys.map fun (α, s) =>
+    (cxt.quoteI α.toIExpr, quote G (cxt.lvl + 1) (lineApp G (cxt.lvl + 1) [] s (.var cxt.lvl)))
+
 end Cxt
 
 abbrev ElabM := StateT Globals (Except String)
@@ -266,7 +271,8 @@ mutual
       let u ← check (cxt.mapBoundary G (vSnd G cxt.lvl [])) u (c.apply G cxt.lvl [] vt)
       return .pair t u
     | .glue sys a, .glueTy A sysG => checkGlue cxt sys a A sysG
-    | .system _, _ => throw "a system can only be an argument of hcomp, hfill, comp, Glue or glue"
+    | .glueU sys a, .hcompU A sysE => checkGlueU cxt sys a A sysE
+    | .system _, _ => throw "a system can only be an argument of hcomp, hfill, comp, Glue, glue or glueU"
     | t, .interval => return .i (← checkI cxt t)
     | t, a => fallback cxt t a
 
@@ -493,6 +499,7 @@ mutual
       let (entries, _) ← checkFlatSys cxt sys (glueCompTy vA)
       pure (.glueTy A entries, .univ)
     | .glue .. => throw "glue needs a known Glue type; add a type annotation"
+    | .glueU .. => throw "glueU needs a known composition type; add a type annotation"
     | .unglue b => do
       let (b, bty) ← infer cxt b
       let (b, bty) ← insertAll cxt b bty
@@ -594,6 +601,35 @@ mutual
       catch e => throw s!"glue: the base is not the image of the component under the equivalence ({e})"
     let G ← get
     pure (.glue (cxt.quoteSysFlat G sysG) entries a)
+
+  /-- `glueU [φ ↦ t] a` at `hcomp Type [φ ↦ E] A`: `t : E 1` on each face,
+  `a : A`, and `a` is the backward transport of `t` along `E` there. -/
+  partial def checkGlueU (cxt : Cxt) (sys : List (Raw × Raw)) (a : Raw) (A : Val) (sysE : System Val) : ElabM Tm := do
+    let mut entries : List (IExpr × Tm) := []
+    let mut comps : System Val := []
+    for (φ, t) in sys do
+      let φ ← checkI cxt φ
+      for δ in invFormula (evalI cxt.env φ) true do
+        match sysE.find? (·.1 == δ) with
+        | none => throw "glueU: a face of the system is not a face of the composition"
+        | some (_, E) =>
+          let G ← get
+          let cxtδ := cxt.restrict G δ
+          let t' ← check cxtδ t (lineApp G cxt.lvl [] E .one)
+          let G ← get
+          comps := comps ++ [(δ, eval G cxtδ.lvl [] cxtδ.env t')]
+          entries := entries ++ [(φ, t')]
+    for (δ, _) in sysE do
+      unless comps.any (·.1 == δ) do throw "glueU: the system does not cover every face of the composition"
+    let a ← check cxt a A
+    for (δ, vt) in comps do
+      let G ← get
+      let E := (sysE.find? (·.1 == δ)).get!.2
+      let aδ := eval G cxt.lvl [] (cxt.restrict G δ).env a
+      try unify cxt.lvl aδ (eqFun G cxt.lvl [] E vt)
+      catch e => throw s!"glueU: the base is not the backward transport of the component ({e})"
+    let G ← get
+    pure (.glueU (cxt.quoteSys G sysE) entries a)
 end
 
 /-- Replace solved metavariables by their solutions; fail on unsolved ones. -/

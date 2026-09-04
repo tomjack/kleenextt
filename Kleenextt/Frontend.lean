@@ -175,7 +175,7 @@ private def special (name : String) (args : List Raw) : Except String (Option Ra
     | _, _ => none
   let arity : Option Nat := match name with
     | "fst" | "snd" | "unglue" => some 1
-    | "Glue" | "glue" => some 2
+    | "Glue" | "glue" | "glueU" => some 2
     | "transp" | "hcomp" | "ghcomp" | "comp" => some 3
     | "hfill" | "coe" => some 4
     | "hcom" => some 5
@@ -191,6 +191,7 @@ private def special (name : String) (args : List Raw) : Except String (Option Ra
       | "unglue", [b] => pure (Raw.unglue b)
       | "Glue", [a, sys] => do pure (Raw.glueTy a (← system sys))
       | "glue", [sys, a] => do pure (Raw.glue (← system sys) a)
+      | "glueU", [sys, a] => do pure (Raw.glueU (← system sys) a)
       | "transp", [a, r, u] => pure (Raw.transp a r u)
       | "hcomp", [a, sys, u] => do let (j, sys) ← boundSystem sys; pure (Raw.hcomp false a j sys u)
       | "ghcomp", [a, sys, u] => do let (j, sys) ← boundSystem sys; pure (Raw.hcomp true a j sys u)

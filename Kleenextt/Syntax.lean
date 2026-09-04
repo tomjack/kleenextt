@@ -44,6 +44,8 @@ inductive Raw where
   | glueTy (a : Raw) (sys : List (Raw × Raw))
   | glue (sys : List (Raw × Raw)) (a : Raw)
   | unglue (b : Raw)
+  /-- An element of a composition in the universe, `glueU [φ ↦ t] a`. -/
+  | glueU (sys : List (Raw × Raw)) (a : Raw)
   | split (x P : Raw) (cases : List (String × List String × Raw))
   /-- `hlevel n h`: the cube the enclosing path binders ask for, filled by
   the h-level `n` proof `h` of its type. -/

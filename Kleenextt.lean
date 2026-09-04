@@ -11,6 +11,7 @@ import Kleenextt.Cubical
 import Kleenextt.Brunerie
 import Kleenextt.HLevel
 import Kleenextt.S1Mod2
+import Kleenextt.Tubes
 import Kleenextt.S2Mod2
 import Kleenextt.Defun
 import Kleenextt.DefunTest
