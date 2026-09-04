@@ -240,8 +240,6 @@ mutual
       let ls := ((entries.map fun (α, _) => α.map (·.1)).flatten.eraseDups.toArray.qsort (· < ·)).toList
       unless ls.length == n do
         throw s!"hlevel: {ls.length} cube variables but level {n}"
-      if Val.vars G a &&& levelSet ls != 0 then
-        throw "hlevel: the type depends on the cube variables (not supported yet)"
       let hty := vApp G cxt.lvl [] (eval G 0 [] [] (isOfHLevelTm n)) a .expl
       let h ← check cxt h hty
       let sys := entries.map fun (α, v) => (cxt.quoteI α.toIExpr, quote G cxt.lvl v)

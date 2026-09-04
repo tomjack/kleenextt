@@ -23,6 +23,15 @@ kdef cube : (A : Type) (h : isGroupoid A) (a b : A) (p q : Path A a b) (r s : Pa
 kdef sqFun : (A B : Type) (h : isSet B) (f g : A → B) (p q : Path (A → B) f g) → Path (Path (A → B) f g) p q :=
   λ A B h f g p q => λ i j => λ x => hlevel 2 h
 
+-- Families over the cube: `lemPropFam'` and `lemSetFam` of the prelude.
+kdef lnFam : (A : I → Type) (h : (i : I) → isProp (A i)) (a0 : A 0) (a1 : A 1) → PathP A a0 a1 :=
+  λ A h a0 a1 => λ i => hlevel 1 (h i)
+
+kdef sqFam : (A : I → I → Type) (h : (i j : I) → isSet (A i j)) (p0 : (j : I) → A 0 j) (p1 : (j : I) → A 1 j)
+  (q0 : PathP (λ i => A i 0) (p0 0) (p1 0)) (q1 : PathP (λ i => A i 1) (p0 1) (p1 1))
+  → PathP (λ i => PathP (λ j => A i j) (q0 i) (q1 i)) (λ j => p0 j) (λ j => p1 j) :=
+  λ A h p0 p1 q0 q1 => λ i j => hlevel 2 (h i j)
+
 -- The line is `extend₁`: `h a b` with its endpoints corrected.
 #kconv (λ (A : Type) (h : isProp A) (a b : A) => ln A h a b)
   = (λ A h a b => λ i => hcomp A (λ j => [(i = 0) ↦ h a a j, (i = 1) ↦ h b b j]) (h a b i))

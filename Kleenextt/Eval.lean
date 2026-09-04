@@ -1042,17 +1042,39 @@ mutual
     | some l, 1 =>
       let x0 := (sys.find? (·.1 == [(l, false)])).map (·.2) |>.getD (panic! "hlevel: missing face")
       let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
-      let side (x : Val) := mkLine L (closure% fun L1 j =>
-        papp' L1 κ (vApp L1 κ (vApp L1 κ h x .expl) x .expl) j x x)
-      let base := papp' L κ (vApp L κ (vApp L κ h x0 .expl) x1 .expl) (.var l) x0 x1
-      hcomp' L κ A (mkSystem κ [([(l, false)], side x0), ([(l, true)], side x1)]) base
+      -- The line `h x₀ x₁`, over a family the two endpoints transported to
+      -- the point (`lemPropFam'`), with its endpoints corrected by an `hcomp`.
+      let bottom :=
+        if (Val.vars A).testBit l then
+          let Al := Val.line l (Thunk.pure A) (clearLevel (Val.vars A) l)
+          let f0 := lineApp L κ (transpFill L κ Al .zero x0) (.var l)
+          let f1 := lineApp L κ (transpFill L κ (revLine L κ Al) .zero x1) (.neg (.var l))
+          papp' L κ (vApp L κ (vApp L κ h f0 .expl) f1 .expl) (.var l) f0 f1
+        else papp' L κ (vApp L κ (vApp L κ h x0 .expl) x1 .expl) (.var l) x0 x1
+      let side (d : Bool) (x : Val) :=
+        let hx := face L κ [(l, d)] h
+        let b := face L κ [(l, d)] bottom
+        mkLine L (closure% fun L1 j => papp' L1 κ (vApp L1 κ (vApp L1 κ hx b .expl) x .expl) j b x)
+      hcomp' L κ A (mkSystem κ [([(l, false)], side false x0), ([(l, true)], side true x1)]) bottom
     | some l, n + 2 =>
       let x0 := (sys.find? (·.1 == [(l, false)])).map (·.2) |>.getD (panic! "hlevel: missing face")
       let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
-      let P := prim' L κ "Path" [A, x0, x1]
-      let h' := vApp L κ (vApp L κ h x0 .expl) x1 .expl
       let sys' := sys.filterMap fun (α, w) =>
-        if α.mentions l then none else some (α, Val.line l (Thunk.pure w) (clearLevel w.vars l))
+        if α.mentions l then none else some (α, Val.line l (Thunk.pure w) (clearLevel (Val.vars w) l))
+      let (P, h') :=
+        if (Val.vars A).testBit l then
+          -- `PathP (λ l. A) x₀ x₁` is a path in `A 1` from `transp A x₀`, along
+          -- `t ↦ PathP (λ j. A (t ∨ j)) (transpFill A x₀ t) x₁` (`fromPathPPath`);
+          -- its h-level is `h 1 (transp A x₀) x₁` transported back.
+          let Al := Val.line l (Thunk.pure A) (clearLevel (Val.vars A) l)
+          let fill := transpFill L κ Al .zero x0
+          let hx := vApp L κ (vApp L κ (face L κ [(l, true)] h) (lineApp L κ fill .one) .expl) x1 .expl
+          let lvl := eval L κ [] (isOfHLevelTm (n + 1))
+          let T := mkLine L (closure% fun L1 t =>
+            let Aline := mkLine L1 (closure% fun L2 j => lineApp L2 κ Al (.join t j))
+            vApp L1 κ lvl (prim' L1 κ "PathP" [Aline, lineApp L1 κ fill t, x1]) .expl)
+          (prim' L κ "PathP" [Al, x0, x1], transp' L κ (revLine L κ T) .zero hx)
+        else (prim' L κ "Path" [A, x0, x1], vApp L κ (vApp L κ h x0 .expl) x1 .expl)
       lineApp L κ (extend' L κ (n + 1) P h' sys') (.var l)
 
   /-- `transp^i (Glue [φ ↦ (T, e)] A) r b₀`, after Cubical Agda / Huber:
