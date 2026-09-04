@@ -57,6 +57,30 @@ kdef surfs : (x : S2m2) → Ω2 S2m2 x := λ x => case x (λ x => Ω2 S2m2 x)
 
 #kconv (λ (a b : I) => surfs base a b) = (λ a b => surf a b)
 
+-- `thingy`: at every point, the surface equals its flip (`THINGY-base`,
+-- `THINGY-surf`, `THINGY-mod2`, `thingy'`); the 5- and 6-cubes are above
+-- the level of `S2m2`, and the truncation case fills a 4-cube in a
+-- proposition.
+kdef thingyBase : Path (Ω2 S2m2 base) (λ a b => surf b a) (λ a b => surf a b) := λ t a b => mod2 (¬ t) a b
+kdef thingySurf : PathP (λ i => PathP (λ j => Path (Ω2 S2m2 (surf i j)) (λ a b => surfsLemma1 i j b a) (surfsLemma1 i j))
+                          thingyBase thingyBase) refl refl :=
+  λ i j t a b => hlevel 4 truncS2m2
+kdef thingyMod2 : PathP (λ k => PathP (λ i => PathP (λ j => Path (Ω2 S2m2 (mod2 k i j))
+                                                       (λ a b => surfsLemma2 k i j b a) (surfsLemma2 k i j))
+                                        (λ t a b => mod2 (¬ t) a b) (λ t a b => mod2 (¬ t) a b))
+                          (λ j t a b => mod2 (¬ t) a b) (λ j t a b => mod2 (¬ t) a b))
+    (λ i j => thingySurf i j) (λ i j => thingySurf j i) :=
+  λ k i j t a b => hlevel 4 truncS2m2
+kdef thingy : (y : S2m2) → Path (Ω2 S2m2 y) (λ i j => surfs y j i) (λ i j => surfs y i j) :=
+  λ y => case y (λ y => Path (Ω2 S2m2 y) (λ i j => surfs y j i) (λ i j => surfs y i j))
+    [ base ↦ thingyBase, surf i j ↦ thingySurf i j, mod2 k i j ↦ thingyMod2 k i j,
+      trunc x y p q r s t u a b c d ↦
+        hlevel 1 (truncS2m2 (trunc x y p q r s t u a b c d) (trunc x y p q r s t u a b c d) refl refl
+                    (λ i j => surfs (trunc x y p q r s t u a b c d) j i)
+                    (λ i j => surfs (trunc x y p q r s t u a b c d) i j)) ]
+
+#kconv (λ (t a b : I) => thingy base t a b) = (λ t a b => mod2 (¬ t) a b)
+
 #kconv (λ (B : Type) (h : is2Groupoid B) (b : B) (sf : Path (Path B b b) refl refl)
   (m : Path (Path (Path B b b) refl refl) sf (λ i j => sf j i)) (i j : I)
   => recS2m2 B h b sf m (surf i j)) = (λ B h b sf m i j => sf i j)

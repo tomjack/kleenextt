@@ -182,6 +182,13 @@ kdef sqFam : (A : I → I → Type) (h : (i j : I) → isSet (A i j)) (p0 : (j :
 #kconv (λ (A : Type) (h : isProp A) (a b : A) => ln A h a b)
   = (λ A h a b => λ i => hcomp A (λ j => [(i = 0) ↦ h a a j, (i = 1) ↦ h b b j]) (h a b i))
 
-#kfail (λ (A : Type) (h : isProp A) (a b : A) => λ (i j : I) => hlevel 1 h)
+-- Cubes above the level: `h` weakened up to the dimension.
+kdef sqProp : (A : Type) (h : isProp A) (a b : A) (p q : Path A a b) → Path (Path A a b) p q :=
+  λ A h a b p q => λ i j => hlevel 1 h
+kdef cubeContr : (A : Type) (h : isContr A) (a b : A) (p q : Path A a b) (r s : Path (Path A a b) p q)
+  → Path (Path (Path A a b) p q) r s :=
+  λ A h a b p q r s => λ i j k => hlevel 0 h
+
+#kfail (λ (A : Type) (h : isSet A) (a b : A) => λ (i : I) => hlevel 2 h)
 
 end Kleenextt.HLevel

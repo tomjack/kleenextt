@@ -168,8 +168,49 @@ where
       let path := ap (v "Path") [a, v x, v y]
       .pi x .expl a (.pi y .expl a (if n == 0 then path else go n path))
 
+/-- `isOfHLevelSuc n A h : isOfHLevel (n+1) A` from `h : isOfHLevel n A`: a
+contractible type is a proposition by its contraction, then by the path
+types. -/
+def isOfHLevelSucTm (n : Nat) : Tm := template <| lams ["A", "h"] <| go n (v "A") (v "h")
+where
+  go : Nat → Raw → Raw → Raw
+    | 0, a, h => ap (v "contrToProp") [a, h]
+    | 1, a, h => ap (v "propToSet") [a, h]
+    | n + 2, a, h =>
+      let x := s!"x{n}"
+      let y := s!"y{n}"
+      lams [x, y] (go (n + 1) (ap (v "Path") [a, v x, v y]) (ap h [v x, v y]))
+
+/-- `isContrToProp A h x y = λ i. hcomp A [(i = 0) ↦ h.2 x, (i = 1) ↦ h.2 y] h.1`,
+written in core syntax for the path applications' endpoints. -/
+private def isContrToPropTm : Tm :=
+  .lam "A" .expl <| .lam "h" .expl <| .lam "x" .expl <| .lam "y" .expl <| .ilam "i" <|
+    .hcomp false (.var 4)
+      [(.neg (.var 0), .papp (.app (.snd (.var 4)) (.var 3) .expl) (.var 0) (.fst (.var 4)) (.var 3)),
+       (.var 0, .papp (.app (.snd (.var 4)) (.var 2) .expl) (.var 0) (.fst (.var 4)) (.var 2))]
+      (.fst (.var 3))
+
+/-- `isPropToSet A h a b p q = λ j i. hcomp A [(i = 0) ↦ h a a, (i = 1) ↦ h a b,
+(j = 0) ↦ h a (p i), (j = 1) ↦ h a (q i)] a`, cctt's `isProp-isSet`. -/
+private def isPropToSetTm : Tm :=
+  let h (x y : Tm) : Tm := .app (.app (.var 7) x .expl) y .expl
+  let a : Tm := .var 6
+  let b : Tm := .var 5
+  let pI : Tm := .papp (.var 4) (.var 1) a b
+  let qI : Tm := .papp (.var 3) (.var 1) a b
+  .lam "A" .expl <| .lam "h" .expl <| .lam "a" .expl <| .lam "b" .expl <| .lam "p" .expl <| .lam "q" .expl <|
+    .ilam "j" <| .ilam "i" <|
+    .hcomp false (.var 7)
+      [(.neg (.var 0), .papp (h a a) (.var 0) a a),
+       (.var 0, .papp (h a b) (.var 0) a b),
+       (.neg (.var 1), .papp (h a pI) (.var 0) a pI),
+       (.var 1, .papp (h a qI) (.var 0) a qI)]
+      (.var 5)
+
 /-- Primitives defined by unfolding: arity and closed definition. -/
 private def primDef : String → Option (Nat × Tm)
+  | "contrToProp" => some (2, isContrToPropTm)
+  | "propToSet" => some (2, isPropToSetTm)
   | "isContr" => some (1, isContrTm)
   | "fiber" => some (4, fiberTm)
   | "isEquiv" => some (3, isEquivTm)

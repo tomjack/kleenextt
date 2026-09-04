@@ -275,8 +275,8 @@ hold (`generator` 204k to 142k `hcomp`s) at the same wall time, and
 `brunerieW` goes from 13 minutes and 21 GB to 32 s and 2.7 GB, 74M to
 1.07M `hcomp`s: the universe compositions were rebuilt at every
 substitution pushed through a `case`, 25.7M times, now 105k. `hope`,
-which ran out of 34 GB in 12 minutes, is +1 in 310 s with memory flat at
-2.8 GB from the first half minute (5.9M `hcomp`s).
+which ran out of 34 GB in 12 minutes, is +1 in about eight minutes,
+peaking at 11 GB (5.8M `hcomp`s).
 
 `hlevel n h` fills the cube the enclosing path binders ask for, in a type
 of h-level `n`, from `h : isOfHLevel n A` (`isContr`, then `(x y : A) →
@@ -292,8 +292,9 @@ body must respect, applies later binders to them, and hands the system to
 `hlevel`. The core term keeps the cube variables; evaluation peeks them
 at fresh levels, builds the cube there and substitutes, so it is stable
 under connections. A type varying over the cube transports the h-level
-along it (`isOfHLevelPathP'`). Not yet: a cube of dimension above the
-level (needs `isOfHLevelSuc`).
+along it (`isOfHLevelPathP'`); a cube of dimension above the level
+weakens `h` up to it (`isOfHLevelSuc`, with the contractible and
+proposition steps as core terms).
 
 The truncations are built into the HITs: `S1m2` has `trunc`, a 3-cube
 constructor with path-typed fields, so its recursor's truncation case is
