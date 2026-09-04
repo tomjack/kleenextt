@@ -332,6 +332,17 @@ chain is seconds; what made it so were glued evaluation, the unifier's
 shortcuts for the same object and the same closure, and `lineApp`
 keeping a definition glued so that boundary values are quoted by name.
 
+From it, `π₄(S³)` is nontrivial (`Pi4S3.lean`, outside the default
+build): `π4S3Nontrivial : Path (Ω⁴S³) (η loop3) refl → Empty`. The
+invariant composes `bit` with `Ω⁴S³ → Ω³J₂S²`, transport along `global3`
+of the surfaces of `J₂S²` over `loop3`, which is cctt's `hope` with its
+two cheats removed: `J₂S²` carries its 4-truncation as a constructor, so
+the surfaces over `surf₂` are one `hlevel`, and the family over it lands
+in `h2Groupoid` (the library one level up again, `is3GroupoidH2Groupoid`)
+with the truncation case a 5-cube by `hlevel`. The invariant on the
+generator is `true` in 250 s and 11 GB (3.9M `hcomp`s, against `hope`'s
+5.8M), and checking `π4S3Nontrivial` computes it.
+
 Open: what the closure is worth for printing lines.
 
 Alternatives considered:
