@@ -39,8 +39,8 @@ initialize kDatasExt : SimplePersistentEnvExtension DataInfo (List DataInfo) ←
 order) and the inductive types; the elaboration context itself is empty. -/
 def kCxt (defs : Array KDef) (datas : List DataInfo) : Cxt × Globals :=
   let G := defs.foldl (init := { datas : Globals }) fun G d =>
-    let v := Thunk.mk fun _ => eval G 0 [] d.tm
-    { G with defs := (d.name, v, eval G 0 [] d.ty) :: G.defs }
+    let v := Thunk.mk fun _ => eval G 0 [] [] d.tm
+    { G with defs := (d.name, v, eval G 0 [] [] d.ty) :: G.defs }
   ({}, G)
 
 declare_syntax_cat kexpr
@@ -335,7 +335,7 @@ elab "kdef " x:ident " : " a:kexpr " := " t:kexpr : command => do
     let ((ty, tm), G) ← (do
         let ty ← checkType cxt (← toRaw a)
         let G ← get
-        let tm ← check cxt (← toRaw t) (eval G cxt.lvl cxt.env ty)
+        let tm ← check cxt (← toRaw t) (eval G cxt.lvl [] cxt.env ty)
         pure (ty, tm) : ElabM (Tm × Tm)).run G
     pure (← zonk G cxt.env cxt.lvl ty, ← zonk G cxt.env cxt.lvl tm)
   let (ty, tm) ← orThrowAt x r
@@ -359,7 +359,7 @@ elab tk:"#ktime " e:kexpr : command => do
   let (t, G) ← orThrowAt e r
   Stats.reset
   let t0 ← IO.monoMsNow
-  let v ← IO.lazyPure fun _ => eval G cxt.lvl cxt.env t
+  let v ← IO.lazyPure fun _ => eval G cxt.lvl [] cxt.env t
   let t1 ← IO.monoMsNow
   let n ← IO.lazyPure fun _ => (quote G cxt.lvl v).pretty 0 cxt.names
   let t2 ← IO.monoMsNow
@@ -382,7 +382,7 @@ elab tk:"#ktrace " e:kexpr : command => do
   Stats.reset
   let t0 ← IO.monoMsNow
   let task ← IO.asTask (prio := .dedicated) do
-    let v ← IO.lazyPure fun _ => eval G cxt.lvl cxt.env t
+    let v ← IO.lazyPure fun _ => eval G cxt.lvl [] cxt.env t
     let t1 ← IO.monoMsNow
     let n ← IO.lazyPure fun _ => (quote G cxt.lvl v).pretty 0 cxt.names
     pure (t1, n)
@@ -451,7 +451,7 @@ elab tk:"#khead " k:num e:kexpr : command => do
     pure (t, G)
   let (t, G) ← orThrowAt e r
   let k := k.getNat
-  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) v (.var (cxt.lvl + n))) (eval G cxt.lvl cxt.env t)
+  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) [] v (.var (cxt.lvl + n))) (eval G cxt.lvl [] cxt.env t)
   let s ← IO.lazyPure fun _ => headInfo v
   logInfoAt tk s!"levels {cxt.lvl}..{cxt.lvl + k}: {s}"
 
@@ -468,27 +468,27 @@ elab tk:"#koverlaps " k:num e:kexpr : command => do
   let k := k.getNat
   let L := cxt.lvl + k
   let names := (List.range k).foldl (fun ns n => s!"v{n}" :: ns) cxt.names
-  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) v (.var (cxt.lvl + n))) (eval G cxt.lvl cxt.env t)
+  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) [] v (.var (cxt.lvl + n))) (eval G cxt.lvl [] cxt.env t)
   let head (s : String) : String := if s.length > 300 then String.ofList (s.toList.take 300) ++ "…" else s
   match v.whnf with
   | .hcomp _ sys u =>
     let mut report := s!"{showFaces sys}\n"
     -- Sides at the fresh level `L` against each other on common faces.
-    let sides := (sys.map fun (α, s) => (α, s, lineApp G (L + 1) s (.var L))).toArray
+    let sides := (sys.map fun (α, s) => (α, s, lineApp G (L + 1) [] s (.var L))).toArray
     for hx : x in [0:sides.size] do
       let (α, s, sv) := sides[x]
-      let gen ← IO.lazyPure fun _ => (face G (L + 1) α sv).headStr 3
-      let lid ← IO.lazyPure fun _ => (face G L α (lineApp G L s .one)).headStr 3
+      let gen ← IO.lazyPure fun _ => (face G (L + 1) [] α sv).headStr 3
+      let lid ← IO.lazyPure fun _ => (face G L [] α (lineApp G L [] s .one)).headStr 3
       report := report ++ s!"side {showFaces [(α, ())]}: {gen}\n  at 1: {lid}\n"
       for hy : y in [x + 1:sides.size] do
         let (β, _, sv') := sides[y]
         if let some γ := α.meet β then
-          let a ← IO.lazyPure fun _ => (quote G (L + 1) (face G (L + 1) γ sv)).pretty 0 ("l" :: names)
-          let b ← IO.lazyPure fun _ => (quote G (L + 1) (face G (L + 1) γ sv')).pretty 0 ("l" :: names)
+          let a ← IO.lazyPure fun _ => (quote G (L + 1) (face G (L + 1) [] γ sv)).pretty 0 ("l" :: names)
+          let b ← IO.lazyPure fun _ => (quote G (L + 1) (face G (L + 1) [] γ sv')).pretty 0 ("l" :: names)
           if a != b then
             report := report ++ s!"DISAGREE on {showFaces [(γ, ())]}:\n  {head a}\n  {head b}\n"
-      let a ← IO.lazyPure fun _ => (quote G L (face G L α (lineApp G L s .zero))).pretty 0 names
-      let b ← IO.lazyPure fun _ => (quote G L (face G L α u)).pretty 0 names
+      let a ← IO.lazyPure fun _ => (quote G L (face G L [] α (lineApp G L [] s .zero))).pretty 0 names
+      let b ← IO.lazyPure fun _ => (quote G L (face G L [] α u)).pretty 0 names
       if a != b then
         report := report ++ s!"side {showFaces [(α, ())]} at 0 ≠ base:\n  {head a}\n  {head b}\n"
     logInfoAt tk report
@@ -507,15 +507,15 @@ elab tk:"#kstable " k:num e:kexpr : command => do
   let k := k.getNat
   let L := cxt.lvl + k
   let names := (List.range k).foldl (fun ns n => s!"v{n}" :: ns) cxt.names
-  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) v (.var (cxt.lvl + n))) (eval G cxt.lvl cxt.env t)
-  let generic := lineApp G (L + 1) v (.var L)
+  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) [] v (.var (cxt.lvl + n))) (eval G cxt.lvl [] cxt.env t)
+  let generic := lineApp G (L + 1) [] v (.var L)
   let show_ (w : Val) : String := (quote G L w).pretty 0 names
   let head (s : String) : String := if s.length > 300 then String.ofList (s.toList.take 300) ++ "…" else s
   let gen ← IO.lazyPure fun _ => headInfo generic
   let mut report := s!"generic: {gen}\n"
   for (r, name) in [(IExpr.zero, "0"), (IExpr.one, "1")] do
-    let viaSub ← IO.lazyPure fun _ => show_ (act G L [(L, r)] generic)
-    let direct ← IO.lazyPure fun _ => show_ (lineApp G L v r)
+    let viaSub ← IO.lazyPure fun _ => show_ (act G L [] [(L, r)] generic)
+    let direct ← IO.lazyPure fun _ => show_ (lineApp G L [] v r)
     if viaSub == direct then report := report ++ s!"at {name}: stable\n  {head direct}\n"
     else report := report ++ s!"at {name}: UNSTABLE\n  substituted: {head viaSub}\n  direct:      {head direct}\n"
   logInfoAt tk report
@@ -534,7 +534,7 @@ private def convSides (cxt : Cxt) (a b : TSyntax `kexpr) : ElabM (Option (String
   let tb ← check cxt (← toRaw b) tya
   let G ← get
   try
-    unify cxt.lvl (eval G cxt.lvl cxt.env ta) (eval G cxt.lvl cxt.env tb)
+    unify cxt.lvl (eval G cxt.lvl [] cxt.env ta) (eval G cxt.lvl [] cxt.env tb)
     pure none
   catch _ =>
     let G ← get

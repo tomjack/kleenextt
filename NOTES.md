@@ -255,7 +255,28 @@ so the memoised body stays. The level bitmask never exceeds 19 here, so
 it is unboxed. cctt is Cartesian, without connections; its normal-form
 version of the square (`w22thing`) takes 6.4 s and 13.5M `hcom`s against
 0.09 s and 87k for its Brunerie number, so the direct square is two
-orders harder there too. `hope` is untried.
+orders harder there too.
+
+Restriction is now cctt's: a cofibration in scope, not an operation on
+values. Every rule takes `κ`, a face, next to `L`. A head is inspected
+under `κ` (`frc`, which applies `κ` at the head only and is free when the
+value mentions none of `κ`'s generators); the work for a face `α` of a
+system runs under `κ ∧ α`, captured by the face's closure; systems keep
+their faces relative to `κ`, re-read under a larger one; interval
+decisions apply `κ`. Substitution (`act`) stays for renaming, for
+instantiating a peeked variable, and for constant instantiation. Two
+details decided the cost. A captured cofibration is not part of a
+closure's support, or every line built in a face scope looks as if it
+mentioned the face and is restricted again at each inspection. And what a
+face scope captures is pre-restricted once with `face`, so one restricted
+copy serves every inspection under the face, with `κ` only the guarantee.
+The bug above cannot be written any more. Counts on the ladder drop or
+hold (`generator` 204k to 142k `hcomp`s) at the same wall time, and
+`brunerieW` goes from 13 minutes and 21 GB to 32 s and 2.7 GB, 74M to
+1.07M `hcomp`s: the universe compositions were rebuilt at every
+substitution pushed through a `case`, 25.7M times, now 105k. `hope`,
+which ran out of 34 GB in 12 minutes, is +1 in 310 s with memory flat at
+2.8 GB from the first half minute (5.9M `hcomp`s).
 
 Open: what the closure is worth for printing lines.
 

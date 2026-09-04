@@ -3,8 +3,8 @@ import Kleenextt.Hope
 /-! The expensive numbers: `lake build Kleenextt.BenchHope`. Both take a
 cube written directly as nested `hcomp`s with connections in the
 constructor arguments; the open `split` of such a cube has a normal form
-of 41 MB against 111 KB for `w22`. `brunerieW` is +2 in 13 minutes and
-21 GB (74M `hcomp`s); `hope` is untried. -/
+of 41 MB against 111 KB for `w22`. `brunerieW` is +2 in 32 s and 2.7 GB
+(1.07M `hcomp`s); `hope` is +1 in 310 s and 2.8 GB (5.9M). -/
 
 namespace Kleenextt.Brunerie
 

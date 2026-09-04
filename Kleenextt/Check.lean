@@ -45,8 +45,8 @@ def define (cxt : Cxt) (x : String) (t a : Val) : Cxt where
 which fresh metavariables must not abstract over. -/
 def restrict (G : Globals) (cxt : Cxt) (α : Face) : Cxt :=
   { cxt with
-    env := cxt.env.map (face G cxt.lvl α)
-    types := cxt.types.map fun (x, o, a) => (x, o, face G cxt.lvl α a)
+    env := cxt.env.map (face G cxt.lvl [] α)
+    types := cxt.types.map fun (x, o, a) => (x, o, face G cxt.lvl [] α a)
     bds := cxt.bds.zipWith (fun bd idx => if α.mentions (cxt.lvl - idx - 1) then .defined else bd)
       (List.range cxt.bds.length) }
 
@@ -76,7 +76,7 @@ def freshMeta (cxt : Cxt) : ElabM Tm := do
 
 def evalC (cxt : Cxt) (t : Tm) : ElabM Val := do
   let G ← get
-  pure (eval G cxt.lvl cxt.env t)
+  pure (eval G cxt.lvl [] cxt.env t)
 
 def forceC (cxt : Cxt) (v : Val) : ElabM Val := do
   let G ← get
@@ -94,7 +94,7 @@ partial def insertAll (cxt : Cxt) (t : Tm) (a : Val) : ElabM (Tm × Val) := do
   | .pi _ .impl _ c =>
     let m ← freshMeta cxt
     let G ← get
-    insertAll cxt (.app t m .impl) (c.apply G cxt.lvl (eval G cxt.lvl cxt.env m))
+    insertAll cxt (.app t m .impl) (c.apply G cxt.lvl [] (eval G cxt.lvl [] cxt.env m))
   | a => pure (t, a)
 
 /-- Insert implicit applications unless the term is an implicit lambda. -/
@@ -110,7 +110,7 @@ partial def insertUntilName (cxt : Cxt) (name : String) (t : Tm) (a : Val) : Ela
     else
       let m ← freshMeta cxt
       let G ← get
-      insertUntilName cxt name (.app t m .impl) (c.apply G cxt.lvl (eval G cxt.lvl cxt.env m))
+      insertUntilName cxt name (.app t m .impl) (c.apply G cxt.lvl [] (eval G cxt.lvl [] cxt.env m))
   | _ => throw s!"no implicit argument named {name}"
 
 private def lookupVar (x : String) : Nat → List (String × NameOrigin × Val) → Except String (Nat × Val)
@@ -186,28 +186,28 @@ mutual
         match a with
         | .interval =>
           let cxt' := cxt.bind x .interval
-          return .ilam x (← check cxt' t (c.apply G cxt'.lvl (.i (.var cxt.lvl))))
+          return .ilam x (← check cxt' t (c.apply G cxt'.lvl [] (.i (.var cxt.lvl))))
         | _ =>
-          return .lam x i (← check (cxt.bind x a) t (c.apply G (cxt.lvl + 1) (.var cxt.lvl)))
+          return .lam x i (← check (cxt.bind x a) t (c.apply G (cxt.lvl + 1) [] (.var cxt.lvl)))
       else if i == Icit.impl then
-        return .lam x' .impl (← check (cxt.bind x' a .inserted) (.lam x k t) (c.apply G (cxt.lvl + 1) (.var cxt.lvl)))
+        return .lam x' .impl (← check (cxt.bind x' a .inserted) (.lam x k t) (c.apply G (cxt.lvl + 1) [] (.var cxt.lvl)))
       else
         fallback cxt (.lam x k t) (.pi x' i a c)
     | .lam x _ t, .pathP A x0 x1 =>
       let cxt' := cxt.bind x .interval
-      let t ← check cxt' t (lineApp G cxt'.lvl A (.var cxt.lvl))
+      let t ← check cxt' t (lineApp G cxt'.lvl [] A (.var cxt.lvl))
       let G ← get
       -- The endpoints are evaluated in the restricted context rather than
       -- restricted after evaluation: the open value can be far larger.
-      let at0 := eval G cxt'.lvl (cxt'.restrict G [(cxt.lvl, false)]).env t
-      let at1 := eval G cxt'.lvl (cxt'.restrict G [(cxt.lvl, true)]).env t
+      let at0 := eval G cxt'.lvl [] (cxt'.restrict G [(cxt.lvl, false)]).env t
+      let at1 := eval G cxt'.lvl [] (cxt'.restrict G [(cxt.lvl, true)]).env t
       try unify cxt.lvl at0 x0; unify cxt.lvl at1 x1
       catch e =>
         let G ← get
         throw s!"path endpoints do not match ({e})\nexpected: {cxt.showVal G x0}, {cxt.showVal G x1}\nfound: {cxt.showVal G at0}, {cxt.showVal G at1}"
       return .ilam x t
     | t, .pi x .impl a c =>
-      return .lam x .impl (← check (cxt.bind x a .inserted) t (c.apply G (cxt.lvl + 1) (.var cxt.lvl)))
+      return .lam x .impl (← check (cxt.bind x a .inserted) t (c.apply G (cxt.lvl + 1) [] (.var cxt.lvl)))
     | .letE x a t u, a' =>
       let a ← checkType cxt a
       let va ← evalC cxt a
@@ -221,7 +221,7 @@ mutual
       let t ← check cxt t a
       let vt ← evalC cxt t
       let G ← get
-      let u ← check cxt u (c.apply G cxt.lvl vt)
+      let u ← check cxt u (c.apply G cxt.lvl [] vt)
       return .pair t u
     | .glue sys a, .glueTy A sysG => checkGlue cxt sys a A sysG
     | .system _, _ => throw "a system can only be an argument of hcomp, hfill, comp, Glue or glue"
@@ -245,11 +245,11 @@ mutual
         match G.def? x, G.data? x, G.con? x, primType x with
         | some (_, ty), _, _, _ => pure (.top x, ty)
         | _, some _, _, _ => pure (.prim x, .univ)
-        | _, _, some (d, con), _ => pure (.prim x, eval G 0 [] (conType d con))
+        | _, _, some (d, con), _ => pure (.prim x, eval G 0 [] [] (conType d con))
         | _, _, _, some ty =>
           let ty ← check {} ty .univ
           let G ← get
-          pure (.prim x, eval G 0 [] ty)
+          pure (.prim x, eval G 0 [] [] ty)
         | _, _, _, none => if x == "I" then throw "I is not a term of a type" else throw e
     | .univ => pure (.univ, .univ)
     | .app t u k => do
@@ -270,30 +270,30 @@ mutual
       | .pi _ i' .interval c =>
         if i != i' then throw "implicitness mismatch in application"
         let r ← checkI cxt u
-        pure (.app t (.i r) i, c.apply G cxt.lvl (.i (evalI cxt.env r)))
+        pure (.app t (.i r) i, c.apply G cxt.lvl [] (.i (evalI cxt.env r)))
       | .pathP A x y =>
         if i != .expl then throw "implicitness mismatch in application"
         let r ← checkI cxt u
-        pure (.papp t r (quote G cxt.lvl x) (quote G cxt.lvl y), lineApp G cxt.lvl A (evalI cxt.env r))
+        pure (.papp t r (quote G cxt.lvl x) (quote G cxt.lvl y), lineApp G cxt.lvl [] A (evalI cxt.env r))
       | .pi _ i' a c =>
         if i != i' then throw "implicitness mismatch in application"
         let u ← check cxt u a
         let G ← get
-        pure (.app t u i, c.apply G cxt.lvl (eval G cxt.lvl cxt.env u))
+        pure (.app t u i, c.apply G cxt.lvl [] (eval G cxt.lvl [] cxt.env u))
       | tty =>
-        let a := eval G cxt.lvl cxt.env (← freshMeta cxt)
+        let a := eval G cxt.lvl [] cxt.env (← freshMeta cxt)
         let c := Closure.mk cxt.env (← freshMeta (cxt.bind "x" a))
         unifyCatch cxt tty (.pi "x" i a c)
         let u ← check cxt u a
         let G ← get
-        pure (.app t u i, c.apply G cxt.lvl (eval G cxt.lvl cxt.env u))
+        pure (.app t u i, c.apply G cxt.lvl [] (eval G cxt.lvl [] cxt.env u))
     | .lam x k t => do
       let i ← match k with
         | .expl => pure Icit.expl
         | .impl => pure Icit.impl
         | .named _ => throw "can't infer a type for a named implicit lambda"
       let G ← get
-      let a := eval G cxt.lvl cxt.env (← freshMeta cxt)
+      let a := eval G cxt.lvl [] cxt.env (← freshMeta cxt)
       let cxt' := cxt.bind x a
       let (t, b) ← insert cxt' (← infer cxt' t)
       let G ← get
@@ -323,7 +323,7 @@ mutual
       match ← forceC cxt a with
       | .sigma _ _ c =>
         let G ← get
-        pure (.snd t, c.apply G cxt.lvl (vFst G (eval G cxt.lvl cxt.env t)))
+        pure (.snd t, c.apply G cxt.lvl [] (vFst G cxt.lvl [] (eval G cxt.lvl [] cxt.env t)))
       | a => do let G ← get; throw s!"expected a pair type, inferred: {cxt.showVal G a}"
     | .letE x a t u => do
       let a ← checkType cxt a
@@ -334,7 +334,7 @@ mutual
       pure (.letE x a t u, uty)
     | .hole => do
       let G ← get
-      let a := eval G cxt.lvl cxt.env (← freshMeta cxt)
+      let a := eval G cxt.lvl [] cxt.env (← freshMeta cxt)
       let t ← freshMeta cxt
       pure (t, a)
     | .ann t a => do
@@ -368,16 +368,16 @@ mutual
         for ((_, T), name) in con.fields.zip (names.take con.fields.length) do
           let G ← get
           let v := Val.var c.lvl
-          c := c.bind name (eval G c.lvl fenv T)
+          c := c.bind name (eval G c.lvl [] fenv T)
           fenv := v :: fenv
           args := args ++ [v]
         for name in names.drop con.fields.length do
           args := args ++ [Val.i (.var c.lvl)]
           c := c.bind name .interval
         let G ← get
-        let body ← check c body (vApp G c.lvl vP (prim' G c.lvl con.name args) .expl)
+        let body ← check c body (vApp G c.lvl [] vP (prim' G c.lvl [] con.name args) .expl)
         let G ← get
-        let vbody := eval G c.lvl c.env body
+        let vbody := eval G c.lvl [] c.env body
         let conEnv := args.reverse
         let casesSoFar := cases' ++ [(con.name, names, body)]
         -- A `sorry` case is exempt from its boundary, like a cctt hole.
@@ -385,14 +385,14 @@ mutual
         for (φ, e) in boundary do
           for δ in invFormula (evalI conEnv φ) true do
             let G ← get
-            let lhs := face G c.lvl δ vbody
-            let rhs := splitApp G c.lvl (face G c.lvl δ vP) (cxt.env.map (face G c.lvl δ)) casesSoFar
-              (eval G c.lvl (conEnv.map (face G c.lvl δ)) e)
+            let lhs := face G c.lvl [] δ vbody
+            let rhs := splitApp G c.lvl [] (face G c.lvl [] δ vP) (cxt.env.map (face G c.lvl [] δ)) casesSoFar
+              (eval G c.lvl [] (conEnv.map (face G c.lvl [] δ)) e)
             try unify c.lvl lhs rhs
             catch err => throw s!"case: the {con.name} case does not respect its boundary ({err})"
         cases' := casesSoFar
       let G ← get
-      pure (.split P cases' x, vApp G cxt.lvl vP vx .expl)
+      pure (.split P cases' x, vApp G cxt.lvl [] vP vx .expl)
     | t@(.i0) | t@(.i1) | t@(.ineg _) | t@(.imeet _ _) | t@(.ijoin _ _) => do
       pure (.i (← checkI cxt t), .interval)
     | .system _ => throw "a system can only be an argument of hcomp, hfill, comp, Glue or glue"
@@ -400,17 +400,17 @@ mutual
       let A ← check cxt A lineU
       let r ← checkI cxt r
       let G ← get
-      let vA := eval G cxt.lvl cxt.env A
+      let vA := eval G cxt.lvl [] cxt.env A
       let vr := evalI cxt.env r
       for δ in invFormula vr true do
         let G ← get
-        let Aδ := eval G cxt.lvl (cxt.restrict G δ).env A
-        let at0 := lineApp G cxt.lvl Aδ .zero
-        let ati := lineApp G (cxt.lvl + 1) Aδ (.var cxt.lvl)
+        let Aδ := eval G cxt.lvl [] (cxt.restrict G δ).env A
+        let at0 := lineApp G cxt.lvl [] Aδ .zero
+        let ati := lineApp G (cxt.lvl + 1) [] Aδ (.var cxt.lvl)
         try unify (cxt.lvl + 1) ati at0
         catch e => throw s!"transp: the type line is not constant where the cofibration holds ({e})"
-      let u ← check cxt u (lineApp G cxt.lvl vA .zero)
-      pure (.transp A r u, lineApp G cxt.lvl vA .one)
+      let u ← check cxt u (lineApp G cxt.lvl [] vA .zero)
+      pure (.transp A r u, lineApp G cxt.lvl [] vA .one)
     | .hcomp g A j sys u => do
       let A ← check cxt A .univ
       let vA ← evalC cxt A
@@ -431,12 +431,12 @@ mutual
       let A ← check cxti A .univ
       let G ← get
       let vAline : Val := .ilam i (.mk cxt.env A)
-      let vAi := eval G cxti.lvl cxti.env A
+      let vAi := eval G cxti.lvl [] cxti.env A
       let (entries, vsys) ← checkBoundSys cxt j sys vAi
-      let u ← check cxt u (lineApp G cxt.lvl vAline .zero)
+      let u ← check cxt u (lineApp G cxt.lvl [] vAline .zero)
       checkBoundary cxt vsys u
       let G ← get
-      pure (.comp A entries u, lineApp G cxt.lvl vAline .one)
+      pure (.comp A entries u, lineApp G cxt.lvl [] vAline .one)
     | .glueTy A sys => do
       let A ← check cxt A .univ
       let vA ← evalC cxt A
@@ -468,12 +468,12 @@ mutual
       for δ in faces do
         let G ← get
         let cxtδ := cxtj.restrict G δ
-        let t' ← check cxtδ t (face G cxtj.lvl δ ty)
+        let t' ← check cxtδ t (face G cxtj.lvl [] δ ty)
         let G ← get
         vsys := vsys ++ [(δ, .ilam j (.mk cxtδ.env.tail t'))]
         entries := entries ++ [(φ, t')]
     checkCompatible cxt true vsys
-    pure (entries, mkSystem vsys)
+    pure (entries, mkSystem [] vsys)
 
   /-- Check the components of a system whose terms do not bind a variable. -/
   partial def checkFlatSys (cxt : Cxt) (sys : List (Raw × Raw)) (ty : Val) :
@@ -488,12 +488,12 @@ mutual
       for δ in faces do
         let G ← get
         let cxtδ := cxt.restrict G δ
-        let t' ← check cxtδ t (face G cxt.lvl δ ty)
+        let t' ← check cxtδ t (face G cxt.lvl [] δ ty)
         let G ← get
-        vsys := vsys ++ [(δ, eval G cxtδ.lvl cxtδ.env t')]
+        vsys := vsys ++ [(δ, eval G cxtδ.lvl [] cxtδ.env t')]
         entries := entries ++ [(φ, t')]
     checkCompatible cxt false vsys
-    pure (entries, mkSystem vsys)
+    pure (entries, mkSystem [] vsys)
 
   /-- Overlapping components must agree on their common face. -/
   partial def checkCompatible (cxt : Cxt) (lines : Bool) (vsys : System Val) : ElabM Unit := do
@@ -504,9 +504,9 @@ mutual
           let l := cxt.lvl
           let (v1, v2) :=
             if lines then
-              (lineApp G (l + 1) (face G (l + 1) (δ2.minus δ1) s1) (.var l),
-               lineApp G (l + 1) (face G (l + 1) (δ1.minus δ2) s2) (.var l))
-            else (face G l (δ2.minus δ1) s1, face G l (δ1.minus δ2) s2)
+              (lineApp G (l + 1) [] (face G (l + 1) [] (δ2.minus δ1) s1) (.var l),
+               lineApp G (l + 1) [] (face G (l + 1) [] (δ1.minus δ2) s2) (.var l))
+            else (face G l [] (δ2.minus δ1) s1, face G l [] (δ1.minus δ2) s2)
           try unify (if lines then l + 1 else l) v1 v2
           catch e => throw s!"system components disagree where their faces overlap ({e})"
 
@@ -514,8 +514,8 @@ mutual
   partial def checkBoundary (cxt : Cxt) (vsys : System Val) (u : Tm) : ElabM Unit := do
     for (δ, s) in vsys do
       let G ← get
-      let uδ := eval G cxt.lvl (cxt.restrict G δ).env u
-      try unify cxt.lvl uδ (lineApp G cxt.lvl s .zero)
+      let uδ := eval G cxt.lvl [] (cxt.restrict G δ).env u
+      try unify cxt.lvl uδ (lineApp G cxt.lvl [] s .zero)
       catch e => throw s!"the base does not match the sides of the system ({e})"
 
   partial def checkGlue (cxt : Cxt) (sys : List (Raw × Raw)) (a : Raw) (A : Val) (sysG : System Val) : ElabM Tm := do
@@ -529,9 +529,9 @@ mutual
         | some (_, Te) =>
           let G ← get
           let cxtδ := cxt.restrict G δ
-          let t' ← check cxtδ t (vFst G Te)
+          let t' ← check cxtδ t (vFst G cxt.lvl [] Te)
           let G ← get
-          comps := comps ++ [(δ, eval G cxtδ.lvl cxtδ.env t')]
+          comps := comps ++ [(δ, eval G cxtδ.lvl [] cxtδ.env t')]
           entries := entries ++ [(φ, t')]
     for (δ, _) in sysG do
       unless comps.any (·.1 == δ) do throw "glue: the system does not cover every face of the Glue type"
@@ -539,8 +539,8 @@ mutual
     for (δ, vt) in comps do
       let G ← get
       let Te := (sysG.find? (·.1 == δ)).get!.2
-      let aδ := eval G cxt.lvl (cxt.restrict G δ).env a
-      try unify cxt.lvl aδ (vApp G cxt.lvl (vFst G (vSnd G Te)) vt .expl)
+      let aδ := eval G cxt.lvl [] (cxt.restrict G δ).env a
+      try unify cxt.lvl aδ (vApp G cxt.lvl [] (vFst G cxt.lvl [] (vSnd G cxt.lvl [] Te)) vt .expl)
       catch e => throw s!"glue: the base is not the image of the component under the equivalence ({e})"
     let G ← get
     pure (.glue (cxt.quoteSysFlat G sysG) entries a)
@@ -551,7 +551,7 @@ partial def zonk (G : Globals) (env : Env) (l : Nat) : Tm → Except String Tm
   | .mvar m => metaSolution m
   | .insertedMeta m bds => do
     let _ ← metaSolution m
-    pure (quote G l (eval G l env (.insertedMeta m bds)))
+    pure (quote G l (eval G l [] env (.insertedMeta m bds)))
   | .var i => pure (.var i)
   | .univ => pure .univ
   | .interval => pure .interval

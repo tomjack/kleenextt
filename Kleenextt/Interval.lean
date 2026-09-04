@@ -321,6 +321,7 @@ def minus (α β : Face) : Face :=
 
 /-- The substitution `α` performs on interval expressions. -/
 def apply (α : Face) (r : IExpr) : IExpr :=
+  if α.isEmpty then r else
   r.mapVars fun i => match α.lookup i with
     | some d => .ofBool d
     | none => .var i

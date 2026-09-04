@@ -39,7 +39,7 @@ def solve (gamma : Nat) (m : Nat) (sp : Spine) (rhs : Val) : UnifyM Unit := do
   let G ← get
   let (pren, sorts) ← invert G gamma sp
   let rhs ← readback G pren (some m) rhs
-  let solution := eval G 0 [] (lams sorts.reverse rhs)
+  let solution := eval G 0 [] [] (lams sorts.reverse rhs)
   set { G with metas := G.metas.set! m (.solved solution) }
 
 private def ieqOr (r s : IExpr) : UnifyM Unit :=
@@ -61,19 +61,19 @@ mutual
       | some (_, s') =>
         if lines then
           let G ← get
-          unify (l + 1) (lineApp G (l + 1) s (.var l)) (lineApp G (l + 1) s' (.var l))
+          unify (l + 1) (lineApp G (l + 1) [] s (.var l)) (lineApp G (l + 1) [] s' (.var l))
         else unify l s s'
 
   partial def unify (l : Nat) (t u : Val) : UnifyM Unit := do
     let G ← get
     match force G l t, force G l u with
-    | .ilam _ c, t' => unify (l + 1) (c.apply G (l + 1) (.i (.var l))) (lineApp G (l + 1) t' (.var l))
-    | t, .ilam _ c' => unify (l + 1) (lineApp G (l + 1) t (.var l)) (c'.apply G (l + 1) (.i (.var l)))
+    | .ilam _ c, t' => unify (l + 1) (c.apply G (l + 1) [] (.i (.var l))) (lineApp G (l + 1) [] t' (.var l))
+    | t, .ilam _ c' => unify (l + 1) (lineApp G (l + 1) [] t (.var l)) (c'.apply G (l + 1) [] (.i (.var l)))
     | t, t'@(.line ..) | t@(.line ..), t' =>
-      unify (l + 1) (lineApp G (l + 1) t (.var l)) (lineApp G (l + 1) t' (.var l))
-    | .lam _ _ c, .lam _ _ c' => unify (l + 1) (c.apply G (l + 1) (.var l)) (c'.apply G (l + 1) (.var l))
-    | .lam _ i c, t' => unify (l + 1) (c.apply G (l + 1) (.var l)) (vApp G (l + 1) t' (.var l) i)
-    | t, .lam _ i c' => unify (l + 1) (vApp G (l + 1) t (.var l) i) (c'.apply G (l + 1) (.var l))
+      unify (l + 1) (lineApp G (l + 1) [] t (.var l)) (lineApp G (l + 1) [] t' (.var l))
+    | .lam _ _ c, .lam _ _ c' => unify (l + 1) (c.apply G (l + 1) [] (.var l)) (c'.apply G (l + 1) [] (.var l))
+    | .lam _ i c, t' => unify (l + 1) (c.apply G (l + 1) [] (.var l)) (vApp G (l + 1) [] t' (.var l) i)
+    | t, .lam _ i c' => unify (l + 1) (vApp G (l + 1) [] t (.var l) i) (c'.apply G (l + 1) [] (.var l))
     | .flex m sp, .flex m' sp' =>
       if m == m' then unifySp l sp sp' else solve l m sp (.flex m' sp')
     | .flex m sp, t' => solve l m sp t'
@@ -88,14 +88,14 @@ mutual
       let fresh := match a with
         | .interval => Val.i (.var l)
         | _ => .var l
-      unify (l + 1) (c.apply G (l + 1) fresh) (c'.apply G (l + 1) fresh)
+      unify (l + 1) (c.apply G (l + 1) [] fresh) (c'.apply G (l + 1) [] fresh)
     | .sigma _ a c, .sigma _ a' c' =>
       unify l a a'
       let G ← get
-      unify (l + 1) (c.apply G (l + 1) (.var l)) (c'.apply G (l + 1) (.var l))
+      unify (l + 1) (c.apply G (l + 1) [] (.var l)) (c'.apply G (l + 1) [] (.var l))
     | .pair u w, .pair u' w' => do unify l u u'; unify l w w'
-    | .pair u w, t' => do unify l u (vFst G t'); unify l w (vSnd G t')
-    | t, .pair u' w' => do unify l (vFst G t) u'; unify l (vSnd G t) w'
+    | .pair u w, t' => do unify l u (vFst G l [] t'); unify l w (vSnd G l [] t')
+    | t, .pair u' w' => do unify l (vFst G l [] t) u'; unify l (vSnd G l [] t) w'
     | .fst t, .fst t' => unify l t t'
     | .snd t, .snd t' => unify l t t'
     | .var x, .var x' => if x == x' then pure () else throw "unify: rigid mismatch"
@@ -136,17 +136,17 @@ mutual
   /-- `b = glue [φ ↦ b] (unglue b)`. -/
   partial def glueEta (l : Nat) (tySys sys : System Val) (a t : Val) : UnifyM Unit := do
     let G ← get
-    unify l a (unglue' G l t tySys)
+    unify l a (unglue' G l [] t tySys)
     for (α, s) in sys do
       let G ← get
-      unify l s (face G l α t)
+      unify l s (face G l [] α t)
 
   partial def glueUEta (l : Nat) (tySys us : System Val) (a t : Val) : UnifyM Unit := do
     let G ← get
-    unify l a (unglueU' G l t tySys)
+    unify l a (unglueU' G l [] t tySys)
     for (α, s) in us do
       let G ← get
-      unify l s (face G l α t)
+      unify l s (face G l [] α t)
 end
 
 end Kleenextt
