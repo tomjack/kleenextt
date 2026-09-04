@@ -406,10 +406,17 @@ mutual
           args := args ++ [Val.i (.var c.lvl)]
           c := c.bind name .interval
         let G ← get
+        let conEnv := args.reverse
+        -- The boundary the case must respect, through the cases so far, is
+        -- what `hlevel` in the body fills towards.
+        let faces := con.boundary.flatMap fun (φ, e) =>
+          (invFormula (evalI conEnv φ) true).map fun δ =>
+            (c.lvl, δ, splitApp G c.lvl [] (face G c.lvl [] δ vP) (cxt.env.map (face G c.lvl [] δ)) cases'
+              (eval G c.lvl [] (conEnv.map (face G c.lvl [] δ)) e))
+        c := { c with boundary := faces ++ c.boundary }
         let body ← check c body (vApp G c.lvl [] vP (prim' G c.lvl [] con.name args) .expl)
         let G ← get
         let vbody := eval G c.lvl [] c.env body
-        let conEnv := args.reverse
         let casesSoFar := cases' ++ [(con.name, names, body)]
         -- A `sorry` case is exempt from its boundary, like a cctt hole.
         let boundary := if body matches .prim "sorry" then [] else con.boundary
