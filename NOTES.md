@@ -316,6 +316,22 @@ an `hcomp` in the universe over `ua` and `J`, took 15 s to convert with
 itself unfolded, and checking the square over it converts it many times;
 `S1Mod2.lean` now checks in under a second.
 
+The cheat-free `bit` of tomjack/cubical `Stuff/Pi3JS2` computes.
+`J2S2.lean` builds the family over `J₂S²` with fibre `S1t × S2m2` (the
+truncated circle and sphere, truncations as constructors), `global
+rotLoopsMod2` over `surf₁` and over `surf₂` the `2,2`-extension that
+`rotLoopsMod2Mod2` gives through `LocalGlobal` (`Tubes.lean`,
+`LocalGlobal.lean`, with `glueU` in the surface syntax for `thing2`, and
+the function underlying `2,2-diag-corollary2` written directly).
+Transport along it takes the Hopf generator `η surf₁` of `π₃(J₂S²)` to
+`π₂∥S²/2∥₂`, `Code` into `hGroupoid` to `π₁∥S¹/2∥₁`, and `Helix/2` to
+`Bool`: `true`, in 5.5 s and 143k `hcomp`s, where Agda's `canon` macro
+reports "not ok!". The controls hold: the constant cube and `η ∙ η`
+give `false`, the flipped generator `true`. Every elaboration in the
+chain is seconds; what made it so were glued evaluation, the unifier's
+shortcuts for the same object and the same closure, and `lineApp`
+keeping a definition glued so that boundary values are quoted by name.
+
 Open: what the closure is worth for printing lines.
 
 Alternatives considered:

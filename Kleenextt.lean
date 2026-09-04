@@ -14,5 +14,6 @@ import Kleenextt.S1Mod2
 import Kleenextt.Tubes
 import Kleenextt.LocalGlobal
 import Kleenextt.S2Mod2
+import Kleenextt.J2S2
 import Kleenextt.Defun
 import Kleenextt.DefunTest
