@@ -8,6 +8,17 @@ namespace Kleenextt.HLevel
 
 kdef isSet : Type → Type := λ A => (a b : A) → isProp (Path A a b)
 kdef isGroupoid : Type → Type := λ A => (a b : A) → isSet (Path A a b)
+kdef is2Groupoid : Type → Type := λ A => (a b : A) → isGroupoid (Path A a b)
+
+-- Weakening, one level at a time: a square in a proposition (cctt's
+-- `isProp-isSet`), then by the path types.
+kdef isPropIsSet : (A : Type) → isProp A → isSet A :=
+  λ A h a b p q => λ j i => hcomp A (λ k => [ (i = 0) ↦ h a a k, (i = 1) ↦ h a b k,
+                                              (j = 0) ↦ h a (p i) k, (j = 1) ↦ h a (q i) k ]) a
+kdef isSetIsGroupoid : (A : Type) → isSet A → isGroupoid A :=
+  λ A h a b => isPropIsSet (Path A a b) (h a b)
+kdef isGroupoidIs2Groupoid : (A : Type) → isGroupoid A → is2Groupoid A :=
+  λ A h a b => isSetIsGroupoid (Path A a b) (h a b)
 
 kdef ln : (A : Type) (h : isProp A) (a b : A) → Path A a b :=
   λ A h a b => λ i => hlevel 1 h

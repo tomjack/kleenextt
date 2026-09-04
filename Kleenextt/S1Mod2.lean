@@ -30,6 +30,21 @@ kdef elimS1m2 : (P : S1m2 → Type) (lev : (x : S1m2) → isGroupoid (P x)) (b :
     [ base ↦ b, loop i ↦ l i, mod2 k i ↦ m k i,
       trunc x y p q r s a b' c ↦ hlevel 3 (lev (trunc x y p q r s a b' c)) ]
 
+-- `rotS¹/2`: the rotation loop at every point (`rotS¹/2''` and its
+-- extension over the truncation, `rotS¹/2'`, in one case). The `mod2`
+-- case is Agda's `extendGroupoid` cube, the `trunc` case fills in the path
+-- type, a set, weakened to a groupoid.
+kdef rot : (x : S1m2) → Path S1m2 x x :=
+  λ x => case x (λ x => Path S1m2 x x)
+    [ base ↦ λ l => loop l,
+      loop i ↦ λ l => constSquare S1m2 base (λ i => loop i) i l,
+      mod2 k i ↦ λ l => hlevel 3 truncS1m2,
+      trunc x y p q r s a b c ↦
+        hlevel 3 (isSetIsGroupoid (Path S1m2 (trunc x y p q r s a b c) (trunc x y p q r s a b c))
+                    (truncS1m2 (trunc x y p q r s a b c) (trunc x y p q r s a b c))) ]
+
+#kconv (λ (l : I) => rot base l) = (λ l => loop l)
+
 #kconv (λ (B : Type) (h : isGroupoid B) (b : B) (l : Path B b b) (m : Path (Path B b b) l (λ i => l (¬ i))) (i : I)
   => recS1m2 B h b l m (loop i)) = (λ B h b l m i => l i)
 
