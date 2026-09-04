@@ -308,9 +308,7 @@ stays a head with its spine and its unfolding, compared or quoted by the
 spine first and unfolded only when that fails. `notEqSym k i` as a type,
 an `hcomp` in the universe over `ua` and `J`, took 15 s to convert with
 itself unfolded, and checking the square over it converts it many times;
-`S1Mod2.lean` now checks in under a second. Open: constructor names
-resolve by declaration order (`base`, `loop` of `S1` and `S1m2`), and an
-importing file sees the other one.
+`S1Mod2.lean` now checks in under a second.
 
 Open: what the closure is worth for printing lines.
 

@@ -32,7 +32,7 @@ initialize kDefsExt : SimplePersistentEnvExtension KDef (Array KDef) ←
 initialize kDatasExt : SimplePersistentEnvExtension DataInfo (List DataInfo) ←
   registerSimplePersistentEnvExtension {
     addEntryFn := fun xs x => x :: xs
-    addImportedFn := fun xss => xss.flatten.toList
+    addImportedFn := fun xss => xss.flatten.reverse.toList
   }
 
 /-- The globals with every `kdef` so far defined (closed terms, evaluated in
@@ -373,14 +373,14 @@ elab tk:"#ktime " e:kexpr : command => do
 stderr every two seconds until it finishes: a growth curve that survives
 running out of memory. The elaborator buffers the standard streams into
 the message log, so the samples go through a fresh handle on the
-process's stderr. -/
+process's stderr, or on the file named by `KTIME_LOG`. -/
 elab tk:"#ktrace " e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String (Tm × Globals) := do
     let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
     pure (t, G)
   let (t, G) ← orThrowAt e r
-  let err ← IO.FS.Handle.mk "/dev/stderr" .append
+  let err ← IO.FS.Handle.mk ((← IO.getEnv "KTIME_LOG").getD "/dev/stderr") .append
   Stats.reset
   let t0 ← IO.monoMsNow
   let task ← IO.asTask (prio := .dedicated) do
