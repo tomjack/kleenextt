@@ -123,6 +123,38 @@ kdef isGroupoidHSet : isGroupoid hSet :=
   λ X Y => isSetRetract (Path hSet X Y) (Path Type (fst X) (fst Y)) (λ P i => fst (P i)) (hSetPath X Y) (hSetPathRetract X Y)
              (isSetPathType (fst X) (fst Y) (snd Y))
 
+-- One level up: the 2-groupoid of groupoids.
+kdef isGroupoidPi : (A : Type) (B : A → Type) → ((x : A) → isGroupoid (B x)) → isGroupoid ((x : A) → B x) :=
+  λ A B h f g p q r s => λ i j k => λ x => hlevel 3 (h x)
+kdef isGroupoidSigma : (A : Type) (B : A → Type) → isGroupoid A → ((x : A) → isGroupoid (B x))
+  → isGroupoid ((x : A) × B x) :=
+  λ A B hA hB u v p q r s => λ i j k =>
+    (hA (fst u) (fst v) (λ i => fst (p i)) (λ i => fst (q i)) (λ i j => fst (r i j)) (λ i j => fst (s i j)) i j k,
+     hlevel 3 (hB (hA (fst u) (fst v) (λ i => fst (p i)) (λ i => fst (q i)) (λ i j => fst (r i j)) (λ i j => fst (s i j)) i j k)))
+kdef isGroupoidRetract : (A B : Type) (s : A → B) (r : B → A) (h : (a : A) → Path A (r (s a)) a)
+  → isGroupoid B → isGroupoid A :=
+  λ A B s r h hB a b p q u v => λ i j k =>
+    hcomp A (λ l => [ (i = 0) ↦ h (u j k) l, (i = 1) ↦ h (v j k) l, (j = 0) ↦ h (p k) l, (j = 1) ↦ h (q k) l,
+                      (k = 0) ↦ h a l, (k = 1) ↦ h b l ])
+      (r (hB (s a) (s b) (λ k => s (p k)) (λ k => s (q k)) (λ j k => s (u j k)) (λ j k => s (v j k)) i j k))
+kdef isGroupoidEquiv : (A B : Type) → isGroupoid B → isGroupoid (Equiv A B) :=
+  λ A B hB => isGroupoidSigma (A → B) (λ f => isEquiv f) (isGroupoidPi A (λ _ => B) (λ _ => hB))
+    (λ f => isSetToGroupoid (isEquiv f) (isPropToSet (isEquiv f) (propIsEquivDirect A B f)))
+kdef isGroupoidPathType : (A B : Type) → isGroupoid B → isGroupoid (Path Type A B) :=
+  λ A B hB => isGroupoidRetract (Path Type A B) (Equiv A B) (pathToEquiv A B) (λ e => ua e) (uaPathToEquiv A B)
+    (isGroupoidEquiv A B hB)
+kdef isPropIsGroupoid : (A : Type) → isProp (isGroupoid A) :=
+  λ A h1 h2 => λ i => λ a b p q r s => hlevel 1 (isPropToSet (Path (Path A a b) p q) (h1 a b p q) r s)
+kdef hGroupoid : Type := (X : Type) × isGroupoid X
+kdef hGroupoidPath : (X Y : hGroupoid) → Path Type (fst X) (fst Y) → Path hGroupoid X Y :=
+  λ X Y p => λ i => (p i, hlevel 1 (isPropIsGroupoid (p i)))
+kdef hGroupoidPathRetract : (X Y : hGroupoid) (P : Path hGroupoid X Y)
+  → Path (Path hGroupoid X Y) (hGroupoidPath X Y (λ i => fst (P i))) P :=
+  λ X Y P => λ j i => (fst (P i), hlevel 2 (isPropToSet (isGroupoid (fst (P i))) (isPropIsGroupoid (fst (P i)))))
+kdef is2GroupoidHGroupoid : is2Groupoid hGroupoid :=
+  λ X Y => isGroupoidRetract (Path hGroupoid X Y) (Path Type (fst X) (fst Y)) (λ P i => fst (P i))
+             (hGroupoidPath X Y) (hGroupoidPathRetract X Y) (isGroupoidPathType (fst X) (fst Y) (snd Y))
+
 kdef ln : (A : Type) (h : isProp A) (a b : A) → Path A a b :=
   λ A h a b => λ i => hlevel 1 h
 
