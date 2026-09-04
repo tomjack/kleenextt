@@ -256,12 +256,18 @@ mutual
         throw s!"hlevel: {m} cube variables but level {n}"
       let hty := vApp G cxt.lvl [] (eval G 0 [] [] (isOfHLevelTm n)) a .expl
       let h ← check cxt h hty
-      -- A cube of dimension above the level: `h` weakened up to it.
+      -- A cube of dimension above the level: over a constant type the
+      -- construction fills it directly, over a family `h` is weakened up
+      -- to it.
       let aTm := quote G cxt.lvl a
-      let h := (List.range (m - n)).foldl (fun h k => .app (.app (isOfHLevelSucTm (n + k)) aTm .expl) h .expl) h
+      let dependent := ls.any fun l => (Val.vars G a).testBit l
+      let h := if dependent then
+          (List.range (m - n)).foldl (fun h k => .app (.app (isOfHLevelSucTm (n + k)) aTm .expl) h .expl) h
+        else h
+      let n := if dependent then m else n
       let sys := entries.map fun (α, v) => (cxt.quoteI α.toIExpr, quote G cxt.lvl v)
       let vars := ls.map fun l => cxt.lvl - l - 1
-      return .extend m aTm h sys vars
+      return .extend n aTm h sys vars
     | .hole, _ => freshMeta cxt
     | .sorry, _ => pure (.prim "sorry")
     | .pair t u, .sigma _ a c =>

@@ -450,7 +450,10 @@ mutual
 
   /-- Apply a value of line type `(i : I) → A` to an interval expression. -/
   partial def lineApp (L : Nat) (κ : Face) (f : Val) (r : IExpr) : Val :=
-    match frc L κ f with
+    match frcG L κ f with
+    | .glued n sp v => .glued n ((.i r, .expl) :: sp) (Thunk.mk fun _ => lineApp L κ v.get r)
+    | f =>
+    match f.whnf with
     | .ilam _ c => c.apply L κ (.i r)
     | .lam _ _ c => c.apply L κ (.i r)
     | .line l body _ => tick .insts <| act L κ [(l, r)] body.get
@@ -1113,6 +1116,16 @@ mutual
     | some _, 0 => ext L κ A h sys
     | some l, 1 =>
       let x0 := (sys.find? (·.1 == [(l, false)])).map (·.2) |>.getD (panic! "hlevel: missing face")
+      if ls.length > 1 then
+        -- A cube of dimension above the level in a proposition: one
+        -- composition from a corner, with `h` joining the corner to each
+        -- face.
+        let c := act L κ (ls.map fun l' => (l', IExpr.zero)) x0
+        let sides := sysUnder L κ sys |>.map fun (α, κα, w) =>
+          let hα := face L κ α h
+          (α, mkLine L (closure% fun L1 j => papp' L1 κα (vApp L1 κα (vApp L1 κα hα c .expl) w .expl) j c w))
+        hcomp' L κ A (mkSystem κ sides) c
+      else
       let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
       -- The line `h x₀ x₁`; over a family, `h` at the point applied to the
       -- two endpoints transported there along connections, which at the

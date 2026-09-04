@@ -334,13 +334,27 @@ elab "kdata " x:ident " := " cons:sepBy(kcon, " | ") : command => do
 
 elab "kdef " x:ident " : " a:kexpr " := " t:kexpr : command => do
   let (cxt, G) ← currentCxt
-  let r : Except String (Tm × Tm) := do
+  let r : Unit → Except String (Tm × Tm) := fun _ => do
     let ((ty, tm), G) ← (do
         let ty ← checkType cxt (← toRaw a)
         let G ← get
         let tm ← check cxt (← toRaw t) (eval G cxt.lvl [] cxt.env ty)
         pure (ty, tm) : ElabM (Tm × Tm)).run G
     pure (← zonk G cxt.env cxt.lvl ty, ← zonk G cxt.env cxt.lvl tm)
+  -- With `KDEF_TRACE` set, the counters every two seconds, as `#ktrace`.
+  let r ← if (← IO.getEnv "KDEF_TRACE").isNone then pure (r ()) else do
+    let err ← IO.FS.Handle.mk ((← IO.getEnv "KTIME_LOG").getD "/dev/stderr") .append
+    Stats.reset
+    let t0 ← IO.monoMsNow
+    let task ← IO.asTask (prio := .dedicated) (IO.lazyPure fun _ => r ())
+    let mut done := false
+    while !done do
+      IO.sleep 2000
+      let ms := (← IO.monoMsNow) - t0
+      err.putStrLn s!"[{x.getId} {ms / 1000} s, {← residentMB} MB] {(← Stats.read).pretty}"
+      err.flush
+      done ← IO.hasFinished task
+    IO.ofExcept task.get
   let (ty, tm) ← orThrowAt x r
   modifyEnv (kDefsExt.addEntry · { name := x.getId.toString, ty, tm })
 

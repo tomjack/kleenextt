@@ -45,6 +45,13 @@ def solve (gamma : Nat) (m : Nat) (sp : Spine) (rhs : Val) : UnifyM Unit := do
 private def ieqOr (r s : IExpr) : UnifyM Unit :=
   if ieq r s then pure () else throw "unify: interval expressions differ"
 
+private unsafe def ptrEqImpl {α : Type} (a b : α) : Bool := ptrEq a b
+
+/-- Physical equality, as a shortcut: the same object is convertible to
+itself, and the same closure code over convertible environments gives
+convertible values. -/
+@[implemented_by ptrEqImpl] private def ptrEqSafe {α : Type} (_ _ : α) : Bool := false
+
 mutual
   partial def unifySp (l : Nat) : Spine → Spine → UnifyM Unit
     | [], [] => pure ()
@@ -65,9 +72,36 @@ mutual
             (face G (l + 1) [] α (lineApp G (l + 1) [] s' (.var l)))
         else unify l (face G l [] α s) (face G l [] α s')
 
-  partial def unify (l : Nat) (t u : Val) : UnifyM Unit := do
+  /-- The same closure code over convertible environments, else the bodies
+  at a fresh variable. -/
+  partial def unifyClo (l : Nat) (c c' : Closure) (fresh : Val) : UnifyM Unit := do
     let G ← get
-    match forceG G l t, forceG G l u with
+    let bodies := unify (l + 1) (c.apply G (l + 1) [] fresh) (c'.apply G (l + 1) [] fresh)
+    match c, c' with
+    | .mk env t, .mk env' t' =>
+      if ptrEqSafe t t' && env.length == env'.length then
+        try for (u, u') in env.zip env' do unify l u u'
+        catch _ => bodies
+      else bodies
+
+  partial def unifyCases (l : Nat) (env : Env) (cs : List (String × List String × Tm))
+      (env' : Env) (cs' : List (String × List String × Tm)) : UnifyM Unit := do
+    for (c, _, b) in cs do
+      match cs'.find? (·.1 == c) with
+      | none => throw "unify: case shapes differ"
+      | some (_, _, b') =>
+        let G ← get
+        let (v, p) := instCase G l env c b
+        let (v', _) := instCase G l env' c b'
+        unify p.cod v v'
+
+  partial def unify (l : Nat) (t u : Val) : UnifyM Unit := do
+    if ptrEqSafe t u then return
+    let G ← get
+    let t := forceG G l t
+    let u := forceG G l u
+    if ptrEqSafe t u then return
+    match t, u with
     | .flex m sp, .flex m' sp' =>
       if m == m' then unifySp l sp sp' else solve l m sp (.flex m' sp')
     | .flex m sp, t' => solve l m sp t'
@@ -78,11 +112,12 @@ mutual
       else unify l v.get v'.get
     | .glued _ _ v, t' => unify l v.get t'
     | t, .glued _ _ v' => unify l t v'.get
+    | .ilam _ c, .ilam _ c' => unifyClo l c c' (.i (.var l))
     | .ilam _ c, t' => unify (l + 1) (c.apply G (l + 1) [] (.i (.var l))) (lineApp G (l + 1) [] t' (.var l))
     | t, .ilam _ c' => unify (l + 1) (lineApp G (l + 1) [] t (.var l)) (c'.apply G (l + 1) [] (.i (.var l)))
     | t, t'@(.line ..) | t@(.line ..), t' =>
       unify (l + 1) (lineApp G (l + 1) [] t (.var l)) (lineApp G (l + 1) [] t' (.var l))
-    | .lam _ _ c, .lam _ _ c' => unify (l + 1) (c.apply G (l + 1) [] (.var l)) (c'.apply G (l + 1) [] (.var l))
+    | .lam _ _ c, .lam _ _ c' => unifyClo l c c' (.var l)
     | .lam _ i c, t' => unify (l + 1) (c.apply G (l + 1) [] (.var l)) (vApp G (l + 1) [] t' (.var l) i)
     | t, .lam _ i c' => unify (l + 1) (vApp G (l + 1) [] t (.var l) i) (c'.apply G (l + 1) [] (.var l))
     | .univ, .univ => pure ()
@@ -95,11 +130,10 @@ mutual
       let fresh := match a with
         | .interval => Val.i (.var l)
         | _ => .var l
-      unify (l + 1) (c.apply G (l + 1) [] fresh) (c'.apply G (l + 1) [] fresh)
+      unifyClo l c c' fresh
     | .sigma _ a c, .sigma _ a' c' =>
       unify l a a'
-      let G ← get
-      unify (l + 1) (c.apply G (l + 1) [] (.var l)) (c'.apply G (l + 1) [] (.var l))
+      unifyClo l c c' (.var l)
     | .pair u w, .pair u' w' => do unify l u u'; unify l w w'
     | .pair u w, t' => do unify l u (vFst G l [] t'); unify l w (vSnd G l [] t')
     | t, .pair u' w' => do unify l (vFst G l [] t) u'; unify l (vSnd G l [] t) w'
@@ -130,14 +164,10 @@ mutual
     | .split P env cs x, .split P' env' cs' x' =>
       unify l P P'
       unify l x x'
-      for (c, _, b) in cs do
-        match cs'.find? (·.1 == c) with
-        | none => throw "unify: case shapes differ"
-        | some (_, _, b') =>
-          let G ← get
-          let (v, p) := instCase G l env c b
-          let (v', _) := instCase G l env' c b'
-          unify p.cod v v'
+      if ptrEqSafe cs cs' && env.length == env'.length then
+        try for (u, u') in env.zip env' do unify l u u'
+        catch _ => unifyCases l env cs env' cs'
+      else unifyCases l env cs env' cs'
     | _, _ => throw "unify: rigid mismatch"
 
   /-- `b = glue [φ ↦ b] (unglue b)`. -/
