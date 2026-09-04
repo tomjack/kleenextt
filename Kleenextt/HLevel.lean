@@ -12,13 +12,36 @@ kdef is2Groupoid : Type → Type := λ A => (a b : A) → isGroupoid (Path A a b
 
 -- Weakening, one level at a time: a square in a proposition (cctt's
 -- `isProp-isSet`), then by the path types.
-kdef isPropIsSet : (A : Type) → isProp A → isSet A :=
+kdef isPropToSet : (A : Type) → isProp A → isSet A :=
   λ A h a b p q => λ j i => hcomp A (λ k => [ (i = 0) ↦ h a a k, (i = 1) ↦ h a b k,
                                               (j = 0) ↦ h a (p i) k, (j = 1) ↦ h a (q i) k ]) a
-kdef isSetIsGroupoid : (A : Type) → isSet A → isGroupoid A :=
-  λ A h a b => isPropIsSet (Path A a b) (h a b)
-kdef isGroupoidIs2Groupoid : (A : Type) → isGroupoid A → is2Groupoid A :=
-  λ A h a b => isSetIsGroupoid (Path A a b) (h a b)
+kdef isSetToGroupoid : (A : Type) → isSet A → isGroupoid A :=
+  λ A h a b => isPropToSet (Path A a b) (h a b)
+kdef isGroupoidTo2Groupoid : (A : Type) → isGroupoid A → is2Groupoid A :=
+  λ A h a b => isSetToGroupoid (Path A a b) (h a b)
+
+-- Being a proposition or a set is a proposition.
+kdef isPropIsProp : (A : Type) → isProp (isProp A) :=
+  λ A h1 h2 => λ i => λ a b => hlevel 1 (isPropToSet A h1 a b)
+kdef isPropIsSet : (A : Type) → isProp (isSet A) :=
+  λ A h1 h2 => λ i => λ a b p q => hlevel 1 (isPropToSet (Path A a b) (h1 a b) p q)
+
+-- Closure under Π and Σ, by `hlevel` in the fibres.
+kdef isPropPi : (A : Type) (B : A → Type) → ((x : A) → isProp (B x)) → isProp ((x : A) → B x) :=
+  λ A B h f g => λ i => λ x => hlevel 1 (h x)
+kdef isSetPi : (A : Type) (B : A → Type) → ((x : A) → isSet (B x)) → isSet ((x : A) → B x) :=
+  λ A B h f g p q => λ i j => λ x => hlevel 2 (h x)
+kdef isSetSigma : (A : Type) (B : A → Type) → isSet A → ((x : A) → isSet (B x)) → isSet ((x : A) × B x) :=
+  λ A B hA hB u v p q => λ i j =>
+    (hA (fst u) (fst v) (λ i => fst (p i)) (λ i => fst (q i)) i j,
+     hlevel 2 (hB (hA (fst u) (fst v) (λ i => fst (p i)) (λ i => fst (q i)) i j)))
+
+-- A retract of a set is a set.
+kdef isSetRetract : (A B : Type) (s : A → B) (r : B → A) (h : (a : A) → Path A (r (s a)) a)
+  → isSet B → isSet A :=
+  λ A B s r h hB a b p q => λ i j =>
+    hcomp A (λ k => [ (i = 0) ↦ h (p j) k, (i = 1) ↦ h (q j) k, (j = 0) ↦ h a k, (j = 1) ↦ h b k ])
+      (r (hB (s a) (s b) (λ j => s (p j)) (λ j => s (q j)) i j))
 
 kdef ln : (A : Type) (h : isProp A) (a b : A) → Path A a b :=
   λ A h a b => λ i => hlevel 1 h

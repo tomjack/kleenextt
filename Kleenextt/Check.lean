@@ -58,6 +58,23 @@ def restrict (G : Globals) (cxt : Cxt) (α : Face) : Cxt :=
     boundary := cxt.boundary.filterMap fun (l0, β, v) =>
       (α.meet β).map fun _ => (l0, β.minus α, face G cxt.lvl [] α v) }
 
+/-- The boundary in the current context: each entry's value with the
+binders since its level applied to it. -/
+def boundaryNow (G : Globals) (cxt : Cxt) : List (Face × Val) :=
+  cxt.boundary.map fun (l0, α, v) =>
+    let v := (List.range (cxt.lvl - l0)).foldl (init := v) fun v k =>
+      let idx := cxt.lvl - (l0 + k) - 1
+      match cxt.types[idx]?, cxt.bds[idx]?, cxt.env[idx]? with
+      | some (_, _, Val.interval), _, some (.i r) => lineApp G cxt.lvl [] v r
+      | some (_, o, _), some .bound, some e =>
+        vApp G cxt.lvl [] v e (if o == .inserted then .impl else .expl)
+      | _, _, _ => v
+    (α, v)
+
+/-- Replace the boundary by one in the current context, transformed. -/
+def mapBoundary (G : Globals) (cxt : Cxt) (f : Val → Val) : Cxt :=
+  { cxt with boundary := (cxt.boundaryNow G).map fun (α, v) => (cxt.lvl, α, f v) }
+
 def showVal (G : Globals) (cxt : Cxt) (v : Val) : String :=
   (quote G cxt.lvl v).pretty 0 cxt.names
 
@@ -227,16 +244,7 @@ mutual
     | .hlevel n h, a =>
       -- The boundary the enclosing path binders ask for, brought to the
       -- current context by applying the later binders.
-      let entries : List (Face × Val) := cxt.boundary.map fun (l0, α, v) =>
-        let v := (List.range (cxt.lvl - l0)).foldl (init := v) fun v k =>
-          let l := l0 + k
-          let idx := cxt.lvl - l - 1
-          match cxt.types[idx]?, cxt.bds[idx]?, cxt.env[idx]? with
-          | some (_, _, Val.interval), _, some (.i r) => lineApp G cxt.lvl [] v r
-          | some (_, o, _), some .bound, some e =>
-            vApp G cxt.lvl [] v e (if o == .inserted then .impl else .expl)
-          | _, _, _ => v
-        (α, v)
+      let entries := cxt.boundaryNow G
       let ls := ((entries.map fun (α, _) => α.map (·.1)).flatten.eraseDups.toArray.qsort (· < ·)).toList
       unless ls.length == n do
         throw s!"hlevel: {ls.length} cube variables but level {n}"
@@ -248,10 +256,10 @@ mutual
     | .hole, _ => freshMeta cxt
     | .sorry, _ => pure (.prim "sorry")
     | .pair t u, .sigma _ a c =>
-      let t ← check cxt t a
+      let t ← check (cxt.mapBoundary G (vFst G cxt.lvl [])) t a
       let vt ← evalC cxt t
       let G ← get
-      let u ← check cxt u (c.apply G cxt.lvl [] vt)
+      let u ← check (cxt.mapBoundary G (vSnd G cxt.lvl [])) u (c.apply G cxt.lvl [] vt)
       return .pair t u
     | .glue sys a, .glueTy A sysG => checkGlue cxt sys a A sysG
     | .system _, _ => throw "a system can only be an argument of hcomp, hfill, comp, Glue or glue"
@@ -413,7 +421,7 @@ mutual
           (invFormula (evalI conEnv φ) true).map fun δ =>
             (c.lvl, δ, splitApp G c.lvl [] (face G c.lvl [] δ vP) (cxt.env.map (face G c.lvl [] δ)) cases'
               (eval G c.lvl [] (conEnv.map (face G c.lvl [] δ)) e))
-        c := { c with boundary := faces ++ c.boundary }
+        c := { c with boundary := faces }
         let body ← check c body (vApp G c.lvl [] vP (prim' G c.lvl [] con.name args) .expl)
         let G ← get
         let vbody := eval G c.lvl [] c.env body

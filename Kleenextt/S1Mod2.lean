@@ -40,7 +40,7 @@ kdef rot : (x : S1m2) → Path S1m2 x x :=
       loop i ↦ λ l => constSquare S1m2 base (λ i => loop i) i l,
       mod2 k i ↦ λ l => hlevel 3 truncS1m2,
       trunc x y p q r s a b c ↦
-        hlevel 3 (isSetIsGroupoid (Path S1m2 (trunc x y p q r s a b c) (trunc x y p q r s a b c))
+        hlevel 3 (isSetToGroupoid (Path S1m2 (trunc x y p q r s a b c) (trunc x y p q r s a b c))
                     (truncS1m2 (trunc x y p q r s a b c) (trunc x y p q r s a b c))) ]
 
 #kconv (λ (l : I) => rot base l) = (λ l => loop l)
