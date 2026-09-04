@@ -1098,8 +1098,9 @@ mutual
   dimension (kangrongji's `extend`). The last variable is peeled off: the
   remaining faces become lines in it, and an `(n-1)`-cube is filled in the
   path type between the two faces on it, of h-level `n - 1` by `h`; a
-  proposition fills a line by an `hcomp` correcting the endpoints of
-  `h x₀ x₁`, and a contractible type fills by `ext`. -/
+  proposition fills a line by `h x₀ x₁`, whose endpoints are the faces
+  since the boundary is the whole one, and a contractible type fills by
+  `ext`. -/
   partial def extend' (L : Nat) (κ : Face) (n : Nat) (A h : Val) (sys : System Val) : Val :=
     let sys := System.restrict κ sys
     match sys.total? with
@@ -1113,20 +1114,15 @@ mutual
     | some l, 1 =>
       let x0 := (sys.find? (·.1 == [(l, false)])).map (·.2) |>.getD (panic! "hlevel: missing face")
       let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
-      -- The line `h x₀ x₁`, over a family the two endpoints transported to
-      -- the point (`lemPropFam'`), with its endpoints corrected by an `hcomp`.
-      let bottom :=
-        if (Val.vars A).testBit l then
-          let Al := Val.line l (Thunk.pure A) (clearLevel (Val.vars A) l)
-          let f0 := lineApp L κ (transpFill L κ Al .zero x0) (.var l)
-          let f1 := lineApp L κ (transpFill L κ (revLine L κ Al) .zero x1) (.neg (.var l))
-          papp' L κ (vApp L κ (vApp L κ h f0 .expl) f1 .expl) (.var l) f0 f1
-        else papp' L κ (vApp L κ (vApp L κ h x0 .expl) x1 .expl) (.var l) x0 x1
-      let side (d : Bool) (x : Val) :=
-        let hx := face L κ [(l, d)] h
-        let b := face L κ [(l, d)] bottom
-        mkLine L (closure% fun L1 j => papp' L1 κ (vApp L1 κ (vApp L1 κ hx b .expl) x .expl) j b x)
-      hcomp' L κ A (mkSystem κ [([(l, false)], side false x0), ([(l, true)], side true x1)]) bottom
+      -- The line `h x₀ x₁`; over a family, `h` at the point applied to the
+      -- two endpoints transported there along connections, which at the
+      -- ends are transports with `r = 1`, so no correction is needed.
+      if (Val.vars A).testBit l then
+        let Al := Val.line l (Thunk.pure A) (clearLevel (Val.vars A) l)
+        let f0 := lineApp L κ (transpFill L κ Al .zero x0) (.var l)
+        let f1 := lineApp L κ (transpFill L κ (revLine L κ Al) .zero x1) (.neg (.var l))
+        papp' L κ (vApp L κ (vApp L κ h f0 .expl) f1 .expl) (.var l) f0 f1
+      else papp' L κ (vApp L κ (vApp L κ h x0 .expl) x1 .expl) (.var l) x0 x1
     | some l, n + 2 =>
       let x0 := (sys.find? (·.1 == [(l, false)])).map (·.2) |>.getD (panic! "hlevel: missing face")
       let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
@@ -1146,7 +1142,7 @@ mutual
             vApp L1 κ lvl (prim' L1 κ "PathP" [Aline, lineApp L1 κ fill t, x1]) .expl)
           (prim' L κ "PathP" [Al, x0, x1], transp' L κ (revLine L κ T) .zero hx)
         else (prim' L κ "Path" [A, x0, x1], vApp L κ (vApp L κ h x0 .expl) x1 .expl)
-      lineApp L κ (extend' L κ (n + 1) P h' sys') (.var l)
+      papp' L κ (extend' L κ (n + 1) P h' sys') (.var l) x0 x1
 
   /-- `transp^i (Glue [φ ↦ (T, e)] A) r b₀`, after Cubical Agda / Huber:
   the `∀i.φ` correction is folded into a `ghcomp`-based composition in `A`,

@@ -284,8 +284,13 @@ isOfHLevel (n-1) (Path A x y)`, with `isProp` at 1). The construction is
 kangrongji's `extend` (the `extend-all` branch of `kangrongji/cubical`,
 commit `b46c4be`, `HLevels/ExtendConstruction.agda`): peel the last cube
 variable, fill an `(n-1)`-cube in the path type between its two faces,
-whose h-level is `h x₀ x₁`, down to `extend₁` for a proposition and `ext`
-for a contractible type. What the branch does not do, and what makes
+whose h-level is `h x₀ x₁`, down to a proposition and `ext` for a
+contractible type. Unlike `extend₁`, a proposition needs no correcting
+composition: the boundary here is the whole one, so `h x₀ x₁` has the
+faces as its endpoints definitionally, over a family too when `h` at
+the point is applied to the endpoints transported there along
+connections; `hlevel 1 h` for a line is `h a b`, and `hlevel 2 h` for a
+square is `h a b p q`. What the branch does not do, and what makes
 `extend` painful in Cubical Agda, is read the boundary off the goal: here
 the checker records, at each path binder, the endpoints as the faces the
 body must respect, applies later binders to them, and hands the system to

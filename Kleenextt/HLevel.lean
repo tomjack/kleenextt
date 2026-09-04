@@ -156,7 +156,7 @@ kdef is2GroupoidHGroupoid : is2Groupoid hGroupoid :=
              (hGroupoidPath X Y) (hGroupoidPathRetract X Y) (isGroupoidPathType (fst X) (fst Y) (snd Y))
 
 kdef ln : (A : Type) (h : isProp A) (a b : A) → Path A a b :=
-  λ A h a b => λ i => hlevel 1 h
+  λ A h => h
 
 kdef sq : (A : Type) (h : isSet A) (a b : A) (p q : Path A a b) → Path (Path A a b) p q :=
   λ A h a b p q => λ i j => hlevel 2 h
@@ -178,9 +178,11 @@ kdef sqFam : (A : I → I → Type) (h : (i j : I) → isSet (A i j)) (p0 : (j :
   → PathP (λ i => PathP (λ j => A i j) (q0 i) (q1 i)) (λ j => p0 j) (λ j => p1 j) :=
   λ A h p0 p1 q0 q1 => λ i j => hlevel 2 (h i j)
 
--- The line is `extend₁`: `h a b` with its endpoints corrected.
-#kconv (λ (A : Type) (h : isProp A) (a b : A) => ln A h a b)
-  = (λ A h a b => λ i => hcomp A (λ j => [(i = 0) ↦ h a a j, (i = 1) ↦ h b b j]) (h a b i))
+-- With the whole boundary given, the constructions are the obvious terms.
+#kconv (λ (A : Type) (h : isProp A) (a b : A) => ln A h a b) = (λ A h a b => h a b)
+#kconv (λ (A : Type) (h : isSet A) (a b : A) (p q : Path A a b) => sq A h a b p q) = (λ A h a b p q => h a b p q)
+#kconv (λ (A : Type) (B : A → Type) (h : (x : A) → isProp (B x)) (f g : (x : A) → B x) => isPropPi A B h f g)
+  = (λ A B h f g => λ i x => h x (f x) (g x) i)
 
 -- Cubes above the level: `h` weakened up to the dimension.
 kdef sqProp : (A : Type) (h : isProp A) (a b : A) (p q : Path A a b) → Path (Path A a b) p q :=
