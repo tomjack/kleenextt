@@ -42,6 +42,21 @@ kdef ext22 : (A : Type) (a : A) (α β : Ω2 A a) → Type := λ A a α β =>
 kdef surfsLemma1 : ext22 S2m2 base (λ i j => surf i j) (λ a b => surf a b) :=
   λ i j a b => hlevel 4 truncS2m2
 
+-- The surfaces at every point (`surfs∥S²/2∥₂`): `Ω² S2m2 x` is a set,
+-- weakened to the dimension of each cube.
+kdef surfsLemma2 : PathP (λ k => PathP (λ i => PathP (λ j => Ω2 S2m2 (mod2 k i j)) (λ a b => surf a b) (λ a b => surf a b))
+                            refl refl)
+    (λ i j => surfsLemma1 i j) (λ i j => surfsLemma1 j i) :=
+  λ k i j => hlevel 3 (isSetToGroupoid (Ω2 S2m2 (mod2 k i j)) (truncS2m2 (mod2 k i j) (mod2 k i j) refl refl))
+kdef surfs : (x : S2m2) → Ω2 S2m2 x := λ x => case x (λ x => Ω2 S2m2 x)
+  [ base ↦ λ a b => surf a b, surf i j ↦ surfsLemma1 i j, mod2 k i j ↦ surfsLemma2 k i j,
+    trunc x y p q r s t u a b c d ↦
+      hlevel 4 (isGroupoidTo2Groupoid (Ω2 S2m2 (trunc x y p q r s t u a b c d))
+                 (isSetToGroupoid (Ω2 S2m2 (trunc x y p q r s t u a b c d))
+                   (truncS2m2 (trunc x y p q r s t u a b c d) (trunc x y p q r s t u a b c d) refl refl))) ]
+
+#kconv (λ (a b : I) => surfs base a b) = (λ a b => surf a b)
+
 #kconv (λ (B : Type) (h : is2Groupoid B) (b : B) (sf : Path (Path B b b) refl refl)
   (m : Path (Path (Path B b b) refl refl) sf (λ i j => sf j i)) (i j : I)
   => recS2m2 B h b sf m (surf i j)) = (λ B h b sf m i j => sf i j)
