@@ -15,6 +15,11 @@ exposing the head of a value (`whnf`) pushes a pending substitution one
 layer, re-running the computation rules on a neutral head, since
 substitution can unblock them, and deferring the children.
 
+Evaluation is glued: a top-level definition stays a head (`glued`) with
+its spine and its unfolding, so that conversion and the readback of a
+metavariable solution can compare or quote the spine and unfold only when
+that fails. Every computation rule sees through it (`whnf`, `frc`).
+
 Every semantic operation takes the current context size `L`, which is the
 fresh-level supply, and the current cofibration `κ`, a face: the equations
 `i = 0`/`i = 1` assumed where the operation runs, cctt's `?cof`. A value is
@@ -218,6 +223,10 @@ mutual
     /-- A value with its support, so that the support of a compound value
     is found without walking it. -/
     | cached (vars : Nat) (v : Val)
+    /-- A top-level definition applied to a spine (latest argument first,
+    interval arguments as `.i r`), with its unfolding: forced transparently,
+    but conversion compares the name and the spine first. -/
+    | glued (name : String) (sp : List (Val × Icit)) (v : Thunk Val)
     | app (t u : Val) (i : Icit)
     | papp (p : Val) (r : IExpr) (x y : Val)
     | univ
@@ -282,12 +291,18 @@ instance [Vars Val] : Vars Closure := ⟨fun c => match c with | .mk env _ => Va
 /-- A system component with its face: the face's generators count. -/
 instance [Vars Val] : Vars (Face × Val) := ⟨fun (α, u) => levelSet (α.map (·.1)) ||| Vars.vars u⟩
 
-/-- Expose the head: push deferred substitutions and force deferred
-computations. -/
-partial def Val.whnf : Val → Val
-  | .sub _ _ _ _ head => head.get.whnf
-  | .lazy _ body => body.get.whnf
-  | .cached _ v => v.whnf
+/-- Expose the head short of unfolding a definition: push deferred
+substitutions and force deferred computations. -/
+partial def Val.whnfG : Val → Val
+  | .sub _ _ _ _ head => head.get.whnfG
+  | .lazy _ body => body.get.whnfG
+  | .cached _ v => v.whnfG
+  | v => v
+
+/-- Expose the head, unfolding definitions. -/
+partial def Val.whnf (v : Val) : Val :=
+  match v.whnfG with
+  | .glued _ _ u => u.get.whnf
   | v => v
 
 /-- The head of a value with the faces of its systems, for diagnostics. -/
@@ -321,6 +336,7 @@ partial def Val.headStr (v : Val) (depth : Nat := 3) : String :=
   | .i r => s!"{repr r}"
   | .var l => s!"var {l}"
   | .flex m _ => s!"?{m}"
+  | .glued n sp _ => s!"{n}/{sp.length}"
   | .sub .. | .lazy .. | .cached .. => "unforced"
 
 /-- Substitute in a system under `κ`: a face `α` becomes the faces on which
@@ -360,6 +376,7 @@ mutual
     | .flex _ sp => sp.foldl (· ||| go ·.1) 0
     | .lam _ _ c | .ilam _ c => goClo c
     | .line _ _ vs | .sub _ _ _ vs _ | .lazy vs _ | .cached vs _ => vs
+    | .glued _ sp _ => sp.foldl (· ||| go ·.1) 0
     | .app t u _ | .pair t u => go t ||| go u
     | .papp p r x y => go p ||| goI r ||| go x ||| go y
     | .i r => goI r
@@ -386,6 +403,10 @@ mutual
   partial def frc (L : Nat) (κ : Face) (v : Val) : Val :=
     if κ.isEmpty then v.whnf else (act L κ κ.toSubst v).whnf
 
+  /-- `frc` short of unfolding a definition. -/
+  partial def frcG (L : Nat) (κ : Face) (v : Val) : Val :=
+    if κ.isEmpty then v.whnfG else (act L κ κ.toSubst v).whnfG
+
   /-- Apply a value of line type `(i : I) → A` to an interval expression. -/
   partial def lineApp (L : Nat) (κ : Face) (f : Val) (r : IExpr) : Val :=
     match frc L κ f with
@@ -395,7 +416,10 @@ mutual
     | f => vApp L κ f (.i r) .expl
 
   partial def vApp (L : Nat) (κ : Face) (t u : Val) (i : Icit) : Val :=
-    match frc L κ t with
+    match frcG L κ t with
+    | .glued n sp v => .glued n ((u, i) :: sp) (Thunk.mk fun _ => vApp L κ v.get u i)
+    | t =>
+    match t.whnf with
     | .lam _ _ c => c.apply L κ u
     | .ilam _ c => c.apply L κ u
     | t@(.line ..) =>
@@ -426,7 +450,10 @@ mutual
     let rκ := κ.apply r
     if rκ.isZero then x
     else if rκ.isOne then y
-    else match frc L κ p with
+    else match frcG L κ p with
+    | .glued n sp v => .glued n ((.i r, .expl) :: sp) (Thunk.mk fun _ => papp' L κ v.get r x y)
+    | p =>
+    match p.whnf with
     | .ilam _ c => c.apply L κ (.i r)
     | .lam _ _ c => c.apply L κ (.i r)
     | .line .. => lineApp L κ p r
@@ -477,7 +504,7 @@ mutual
     | .prim n => prim' L κ n []
     | .top n =>
       match G.def? n with
-      | some (v, _) => v.get
+      | some (v, _) => .glued n [] v
       | none => panic! s!"eval: unknown definition {n}"
     | .split P cases x => splitApp L κ (eval L κ env P) env cases (eval L κ env x)
     | .extend n a h sys vars =>
@@ -535,6 +562,8 @@ mutual
     | .line .. | .sub .. => act L κ σ v
     | .lazy _ body => act L κ σ body.get
     | .cached _ v => push L κ σ v
+    | .glued n sp v =>
+      .glued n (sp.map fun (u, i) => (act L κ σ u, i)) (Thunk.mk fun _ => act L κ σ v.get)
     | .app t u i => vApp L κ (act L κ σ t) (act L κ σ u) i
     | .papp p r x y => papp' L κ (act L κ σ p) (σ.apply r) (act L κ σ x) (act L κ σ y)
     | .univ => .univ
@@ -751,7 +780,8 @@ mutual
     | .hcompU A sysE => transpHU L κ r u A sysE
     | w =>
       let neutral : Val → Bool
-        | .var .. | .app .. | .flex .. | .papp .. => true
+        | .var .. | .app .. | .flex .. | .papp .. | .fst .. | .snd ..
+        | .unglue .. | .unglueU .. | .transp .. | .hcomp .. => true
         | _ => false
       match w with
       | .split _ _ _ x =>
@@ -1153,13 +1183,20 @@ section
 variable (G : Globals)
 include G
 
-/-- Expose the head: deferred values, and solved metavariables. -/
-partial def force (L : Nat) (v : Val) : Val :=
-  match v.whnf with
+/-- Expose the head short of unfolding a definition: deferred values, and
+solved metavariables. -/
+partial def forceG (L : Nat) (v : Val) : Val :=
+  match v.whnfG with
   | .flex m sp =>
     match G.lookupMeta m with
-    | .solved t => force L (vAppSp G L [] t sp)
+    | .solved t => forceG L (vAppSp G L [] t sp)
     | .unsolved => .flex m sp
+  | v => v
+
+/-- Expose the head: deferred values, solved metavariables, definitions. -/
+partial def force (L : Nat) (v : Val) : Val :=
+  match forceG G L v with
+  | .glued _ _ u => force L u.get
   | v => v
 
 /-- A partial renaming from a context of size `dom` to one of size `cod`,
@@ -1194,24 +1231,30 @@ def instCase (l : Nat) (env : Env) (c : String) (body : Tm) : Val × PRen :=
   (eval G (l + nf + ni) [] (args.reverse ++ env) body, p)
 
 /-- Read a value back into core syntax under a partial renaming, failing on
-a variable outside the renaming or on an occurrence of metavariable `occ`. -/
-partial def readback (p : PRen) (occ : Option Nat) (v : Val) : Except String Tm := do
+a variable outside the renaming or on an occurrence of metavariable `occ`.
+A definition is read back as its name and spine, unfolded only when that
+fails, unless `unfold`. -/
+partial def readback (p : PRen) (occ : Option Nat) (unfold : Bool) (v : Val) : Except String Tm := do
   let lvl (x : Nat) : Except String Nat :=
     match p.ren x with
     | some x' => pure (p.dom - x' - 1)
     | none => throw "unify: variable escapes its scope"
   let rbI (r : IExpr) : Except String IExpr := r.mapVarsM fun x => do pure (.var (← lvl x))
   let rbFace (α : Face) : Except String IExpr := rbI α.toIExpr
-  let under (f : Val → Val) : Except String Tm := readback p.lift occ (f (.var p.cod))
-  let underI (f : IExpr → Val) : Except String Tm := readback p.lift occ (f (.var p.cod))
-  let rb := readback p occ
+  let under (f : Val → Val) : Except String Tm := readback p.lift occ unfold (f (.var p.cod))
+  let underI (f : IExpr → Val) : Except String Tm := readback p.lift occ unfold (f (.var p.cod))
+  let rb := readback p occ unfold
   let rbSys (sys : System Val) : Except String (List (IExpr × Tm)) :=
     sys.mapM fun (α, s) => do pure (← rbFace α, ← underI fun j => lineApp G (p.cod + 1) [] s j)
   let rbSysFlat (sys : System Val) : Except String (List (IExpr × Tm)) :=
     sys.mapM fun (α, t) => do pure (← rbFace α, ← rb t)
   let rbArgs (hd : Tm) (args : List Val) : Except String Tm :=
     args.foldlM (fun t u => do pure (.app t (← rb u) .expl)) hd
-  match force G p.cod v with
+  match forceG G p.cod v with
+  | .glued n sp u =>
+    if unfold then rb u.get else
+    try sp.reverse.foldlM (fun t (u, i) => do pure (.app t (← rb u) i)) (.top n)
+    catch _ => rb u.get
   | .var x => pure (.var (← lvl x))
   | .flex m sp =>
     if occ == some m then throw "unify: occurs check"
@@ -1247,17 +1290,18 @@ partial def readback (p : PRen) (occ : Option Nat) (v : Val) : Except String Tm 
   | .split P env cases x =>
     let cases' ← cases.mapM fun (c, names, body) => do
       let (v, p') := instCase G p.cod env c body
-      pure (c, names, ← readback p' occ v)
+      pure (c, names, ← readback p' occ unfold v)
     pure (.split (← rb P) cases' (← rb x))
 
 /-- Read a value back into core syntax; `l` is the current context size. -/
-def quote (l : Nat) (v : Val) : Tm :=
-  match readback G (PRen.id l) none v with
+def quote (l : Nat) (v : Val) (unfold : Bool := false) : Tm :=
+  match readback G (PRen.id l) none unfold v with
   | .ok t => t
   | .error e => panic! s!"quote: {e}"
 
+/-- The normal form, with definitions unfolded. -/
 def nf (env : Env) (t : Tm) : Tm :=
-  quote G env.length (eval G env.length [] env t)
+  quote G env.length (eval G env.length [] env t) true
 
 end
 

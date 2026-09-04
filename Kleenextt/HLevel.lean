@@ -43,6 +43,86 @@ kdef isSetRetract : (A B : Type) (s : A → B) (r : B → A) (h : (a : A) → Pa
     hcomp A (λ k => [ (i = 0) ↦ h (p j) k, (i = 1) ↦ h (q j) k, (j = 0) ↦ h a k, (j = 1) ↦ h b k ])
       (r (hB (s a) (s b) (λ j => s (p j)) (λ j => s (q j)) i j))
 
+kdef isPropRetract : (A B : Type) (s : A → B) (r : B → A) (h : (a : A) → Path A (r (s a)) a)
+  → isProp B → isProp A :=
+  λ A B s r h hB a b => λ i => hcomp A (λ k => [ (i = 0) ↦ h a k, (i = 1) ↦ h b k ]) (r (hB (s a) (s b) i))
+
+-- `Bool` is a set, by encode-decode into a family of propositions.
+kdata Unit := tt
+kdata Empty :=
+
+kdef isPropUnit : isProp Unit :=
+  λ a b => case a (λ a => Path Unit a b) [ tt ↦ case b (λ b => Path Unit tt b) [ tt ↦ λ _ => tt ] ]
+kdef isPropEmpty : isProp Empty := λ a b => case a (λ a => Path Empty a b) []
+
+kdef codeBool : Bool → Bool → Type := λ a b => case a (λ _ => Type)
+  [ true ↦ case b (λ _ => Type) [ true ↦ Unit, false ↦ Empty ],
+    false ↦ case b (λ _ => Type) [ true ↦ Empty, false ↦ Unit ] ]
+kdef isPropCodeBool : (a b : Bool) → isProp (codeBool a b) := λ a b => case a (λ a => isProp (codeBool a b))
+  [ true ↦ case b (λ b => isProp (codeBool true b)) [ true ↦ isPropUnit, false ↦ isPropEmpty ],
+    false ↦ case b (λ b => isProp (codeBool false b)) [ true ↦ isPropEmpty, false ↦ isPropUnit ] ]
+kdef reflCodeBool : (a : Bool) → codeBool a a := λ a => case a (λ a => codeBool a a) [ true ↦ tt, false ↦ tt ]
+kdef encodeBool : (a b : Bool) → Path Bool a b → codeBool a b :=
+  λ a b p => transport (λ i => codeBool a (p i)) (reflCodeBool a)
+kdef decodeBool : (a b : Bool) → codeBool a b → Path Bool a b := λ a b => case a (λ a => codeBool a b → Path Bool a b)
+  [ true ↦ case b (λ b => codeBool true b → Path Bool true b)
+      [ true ↦ λ _ => refl, false ↦ λ e => case e (λ _ => Path Bool true false) [] ],
+    false ↦ case b (λ b => codeBool false b → Path Bool false b)
+      [ true ↦ λ e => case e (λ _ => Path Bool false true) [], false ↦ λ _ => refl ] ]
+kdef decodeEncodeBool : (a b : Bool) (p : Path Bool a b) → Path (Path Bool a b) (decodeBool a b (encodeBool a b p)) p :=
+  λ a b p => J (λ b p => Path (Path Bool a b) (decodeBool a b (encodeBool a b p)) p)
+    (case a (λ a => Path (Path Bool a a) (decodeBool a a (encodeBool a a refl)) refl) [ true ↦ refl, false ↦ refl ]) p
+kdef isSetBool : isSet Bool :=
+  λ a b => isPropRetract (Path Bool a b) (codeBool a b) (encodeBool a b) (decodeBool a b) (decodeEncodeBool a b) (isPropCodeBool a b)
+
+-- Paths in the universe between sets form a set: `Path Type A B` is a
+-- retract of `Equiv A B` by `ua`, since `ua (pathToEquiv p) ≡ p`.
+kdef JRefl : {A : Type} {a : A} (C : (x : A) → Path A a x → Type) (d : C a refl) → Path (C a refl) (J C d refl) d :=
+  λ {A} {a} C d => transportRefl d
+kdef uaIdEquiv : (A : Type) → Path (Path Type A A) (ua (idEquiv A)) refl :=
+  λ A i j => Glue A [ (i = 1) ↦ (A, idEquiv A), (j = 0) ↦ (A, idEquiv A), (j = 1) ↦ (A, idEquiv A) ]
+kdef pathToEquiv : (A B : Type) → Path Type A B → Equiv A B :=
+  λ A B p => J (λ B p => Equiv A B) (idEquiv A) p
+kdef uaPathToEquiv : (A B : Type) (p : Path Type A B) → Path (Path Type A B) (ua (pathToEquiv A B p)) p :=
+  λ A B p => J (λ B p => Path (Path Type A B) (ua (pathToEquiv A B p)) p)
+    (let q : Path (Path Type A A) (ua (pathToEquiv A A refl)) (ua (idEquiv A)) :=
+       λ i => ua (JRefl (λ B p => Equiv A B) (idEquiv A) i);
+     pcomp q (uaIdEquiv A)) p
+kdef pathToEquivFst : (A B : Type) (p : Path Type A B) → Path (A → B) (fst (pathToEquiv A B p)) (transport p) :=
+  λ A B p => J (λ B p => Path (A → B) (fst (pathToEquiv A B p)) (transport p))
+    (let q : Path (A → A) (fst (pathToEquiv A A refl)) (λ x => x) :=
+       λ i => fst (JRefl (λ B p => Equiv A B) (idEquiv A) i);
+     let r : Path (A → A) (λ x => x) (transport refl) := λ i x => transportRefl x (¬ i);
+     pcomp q r) p
+
+kdef isSetEquiv : (A B : Type) → isSet B → isSet (Equiv A B) :=
+  λ A B hB => isSetSigma (A → B) (λ f => isEquiv f) (isSetPi A (λ _ => B) (λ _ => hB))
+    (λ f => isPropToSet (isEquiv f) (propIsEquivDirect A B f))
+kdef isSetPathType : (A B : Type) → isSet B → isSet (Path Type A B) :=
+  λ A B hB => isSetRetract (Path Type A B) (Equiv A B) (pathToEquiv A B) (λ e => ua e) (uaPathToEquiv A B) (isSetEquiv A B hB)
+
+-- Equivalences are equal when their functions are; paths in the universe
+-- are equal when their transports are.
+kdef equivEq : (A B : Type) (e e' : Equiv A B) → Path (A → B) (fst e) (fst e') → Path (Equiv A B) e e' :=
+  λ A B e e' p => λ i => (p i, hlevel 1 (propIsEquivDirect A B (p i)))
+kdef pathEq : (A B : Type) (p q : Path Type A B) → Path (A → B) (transport p) (transport q) → Path (Path Type A B) p q :=
+  λ A B p q h =>
+    let ep : Path (Equiv A B) (pathToEquiv A B p) (pathToEquiv A B q) :=
+      equivEq A B (pathToEquiv A B p) (pathToEquiv A B q)
+        (pcomp (pathToEquivFst A B p) (pcomp h (sym (pathToEquivFst A B q))));
+    let uep : Path (Path Type A B) (ua (pathToEquiv A B p)) (ua (pathToEquiv A B q)) := λ i => ua (ep i);
+    pcomp (sym (uaPathToEquiv A B p)) (pcomp uep (uaPathToEquiv A B q))
+
+-- The groupoid of sets.
+kdef hSet : Type := (X : Type) × isSet X
+kdef hSetPath : (X Y : hSet) → Path Type (fst X) (fst Y) → Path hSet X Y :=
+  λ X Y p => λ i => (p i, hlevel 1 (isPropIsSet (p i)))
+kdef hSetPathRetract : (X Y : hSet) (P : Path hSet X Y) → Path (Path hSet X Y) (hSetPath X Y (λ i => fst (P i))) P :=
+  λ X Y P => λ j i => (fst (P i), hlevel 2 (isPropToSet (isSet (fst (P i))) (isPropIsSet (fst (P i)))))
+kdef isGroupoidHSet : isGroupoid hSet :=
+  λ X Y => isSetRetract (Path hSet X Y) (Path Type (fst X) (fst Y)) (λ P i => fst (P i)) (hSetPath X Y) (hSetPathRetract X Y)
+             (isSetPathType (fst X) (fst Y) (snd Y))
+
 kdef ln : (A : Type) (h : isProp A) (a b : A) → Path A a b :=
   λ A h a b => λ i => hlevel 1 h
 

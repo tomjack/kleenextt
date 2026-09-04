@@ -287,7 +287,7 @@ private def currentCxt : CommandElabM (Cxt × Globals) := do
 inductive type, higher if a constructor binds interval variables. Field
 types are checked in the context of the previous fields only (primitives
 and other inductive types are in scope, `kdef`s are not). -/
-elab "kdata " x:ident " := " cons:sepBy1(kcon, " | ") : command => do
+elab "kdata " x:ident " := " cons:sepBy(kcon, " | ") : command => do
   let (_, G) ← currentCxt
   let name := x.getId.toString
   let mut d : DataInfo := { name, cons := [] }
@@ -363,7 +363,7 @@ elab tk:"#ktime " e:kexpr : command => do
   let t0 ← IO.monoMsNow
   let v ← IO.lazyPure fun _ => eval G cxt.lvl [] cxt.env t
   let t1 ← IO.monoMsNow
-  let n ← IO.lazyPure fun _ => (quote G cxt.lvl v).pretty 0 cxt.names
+  let n ← IO.lazyPure fun _ => (quote G cxt.lvl v true).pretty 0 cxt.names
   let t2 ← IO.monoMsNow
   let s ← Stats.read
   let shown := if n.length > 200 then String.ofList (n.toList.take 200) ++ "…" else n
@@ -386,7 +386,7 @@ elab tk:"#ktrace " e:kexpr : command => do
   let task ← IO.asTask (prio := .dedicated) do
     let v ← IO.lazyPure fun _ => eval G cxt.lvl [] cxt.env t
     let t1 ← IO.monoMsNow
-    let n ← IO.lazyPure fun _ => (quote G cxt.lvl v).pretty 0 cxt.names
+    let n ← IO.lazyPure fun _ => (quote G cxt.lvl v true).pretty 0 cxt.names
     pure (t1, n)
   let mut done := false
   while !done do
@@ -433,6 +433,7 @@ private partial def headInfo (v : Val) (depth : Nat := 3) : String :=
   | .i r => s!"{repr r}"
   | .var l => s!"var {l}"
   | .flex m _ => s!"?{m}"
+  | .glued n sp _ => s!"{n}/{sp.length}"
   | .sub .. | .lazy .. | .cached .. => "unforced"
 
 /-- The elaborated core term of `e`, with its type. -/

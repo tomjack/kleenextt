@@ -291,9 +291,26 @@ the checker records, at each path binder, the endpoints as the faces the
 body must respect, applies later binders to them, and hands the system to
 `hlevel`. The core term keeps the cube variables; evaluation peeks them
 at fresh levels, builds the cube there and substitutes, so it is stable
-under connections. Not yet: a type varying over the cube (needs
-`isOfHLevelPathP'`) and a cube of dimension above the level (needs
-`isOfHLevelSuc`); both are ports of Cubical lemmas.
+under connections. A type varying over the cube transports the h-level
+along it (`isOfHLevelPathP'`). Not yet: a cube of dimension above the
+level (needs `isOfHLevelSuc`).
+
+The truncations are built into the HITs: `S1m2` has `trunc`, a 3-cube
+constructor with path-typed fields, so its recursor's truncation case is
+one `hlevel`. `Helix/2` into `hSet` needs the library up to
+`isGroupoidHSet`: Π, Σ and retracts by `hlevel`, `Bool` a set by
+encode-decode, `Path Type A B` a set as a retract of `Equiv A B` by `ua`
+and `J`. Two things in the checker had to change for it. Conversion
+compares the components of two systems under their face: a component is
+only meaningful there, and the same one reaches the checker restricted on
+one side and not on the other. And evaluation is glued: a definition
+stays a head with its spine and its unfolding, compared or quoted by the
+spine first and unfolded only when that fails. `notEqSym k i` as a type,
+an `hcomp` in the universe over `ua` and `J`, took 15 s to convert with
+itself unfolded, and checking the square over it converts it many times;
+`S1Mod2.lean` now checks in under a second. Open: constructor names
+resolve by declaration order (`base`, `loop` of `S1` and `S1m2`), and an
+importing file sees the other one.
 
 Open: what the closure is worth for printing lines.
 

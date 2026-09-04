@@ -38,7 +38,7 @@ private def lams (sorts : List (Icit × Bool)) (t : Tm) : Tm :=
 def solve (gamma : Nat) (m : Nat) (sp : Spine) (rhs : Val) : UnifyM Unit := do
   let G ← get
   let (pren, sorts) ← invert G gamma sp
-  let rhs ← readback G pren (some m) rhs
+  let rhs ← readback G pren (some m) false rhs
   let solution := eval G 0 [] [] (lams sorts.reverse rhs)
   set { G with metas := G.metas.set! m (.solved solution) }
 
@@ -59,14 +59,25 @@ mutual
       match sys'.find? (·.1 == α) with
       | none => throw "unify: system shapes differ"
       | some (_, s') =>
+        let G ← get
         if lines then
-          let G ← get
-          unify (l + 1) (lineApp G (l + 1) [] s (.var l)) (lineApp G (l + 1) [] s' (.var l))
-        else unify l s s'
+          unify (l + 1) (face G (l + 1) [] α (lineApp G (l + 1) [] s (.var l)))
+            (face G (l + 1) [] α (lineApp G (l + 1) [] s' (.var l)))
+        else unify l (face G l [] α s) (face G l [] α s')
 
   partial def unify (l : Nat) (t u : Val) : UnifyM Unit := do
     let G ← get
-    match force G l t, force G l u with
+    match forceG G l t, forceG G l u with
+    | .flex m sp, .flex m' sp' =>
+      if m == m' then unifySp l sp sp' else solve l m sp (.flex m' sp')
+    | .flex m sp, t' => solve l m sp t'
+    | t, .flex m' sp' => solve l m' sp' t
+    | .glued n sp v, .glued n' sp' v' =>
+      if n == n' && sp.length == sp'.length then
+        try unifySp l sp sp' catch _ => unify l v.get v'.get
+      else unify l v.get v'.get
+    | .glued _ _ v, t' => unify l v.get t'
+    | t, .glued _ _ v' => unify l t v'.get
     | .ilam _ c, t' => unify (l + 1) (c.apply G (l + 1) [] (.i (.var l))) (lineApp G (l + 1) [] t' (.var l))
     | t, .ilam _ c' => unify (l + 1) (lineApp G (l + 1) [] t (.var l)) (c'.apply G (l + 1) [] (.i (.var l)))
     | t, t'@(.line ..) | t@(.line ..), t' =>
@@ -74,10 +85,6 @@ mutual
     | .lam _ _ c, .lam _ _ c' => unify (l + 1) (c.apply G (l + 1) [] (.var l)) (c'.apply G (l + 1) [] (.var l))
     | .lam _ i c, t' => unify (l + 1) (c.apply G (l + 1) [] (.var l)) (vApp G (l + 1) [] t' (.var l) i)
     | t, .lam _ i c' => unify (l + 1) (vApp G (l + 1) [] t (.var l) i) (c'.apply G (l + 1) [] (.var l))
-    | .flex m sp, .flex m' sp' =>
-      if m == m' then unifySp l sp sp' else solve l m sp (.flex m' sp')
-    | .flex m sp, t' => solve l m sp t'
-    | t, .flex m' sp' => solve l m' sp' t
     | .univ, .univ => pure ()
     | .interval, .interval => pure ()
     | .i r, .i s => ieqOr r s
