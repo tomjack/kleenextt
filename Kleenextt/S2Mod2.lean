@@ -32,6 +32,16 @@ kdef elimS2m2 : (P : S2m2 → Type) (lev : (x : S2m2) → is2Groupoid (P x)) (b 
     [ base ↦ b, surf i j ↦ sf i j, mod2 k i j ↦ m k i j,
       trunc x y p q r s t u a b' c d ↦ hlevel 4 (lev (trunc x y p q r s t u a b' c d)) ]
 
+-- `2,2-ext` (`Extensions.agda`): a 4-cube whose faces in the first two
+-- directions are `α` and in the last two `β`; `surfs∥S²/2∥₂-lemma1` fills
+-- it for `surf` in the truncated sphere.
+kdef ext22 : (A : Type) (a : A) (α β : Ω2 A a) → Type := λ A a α β =>
+  PathP (λ i => PathP (λ j => PathP (λ a => PathP (λ b => A) (α i j) (α i j)) refl refl)
+                  (λ a b => β a b) (λ a b => β a b))
+    refl refl
+kdef surfsLemma1 : ext22 S2m2 base (λ i j => surf i j) (λ a b => surf a b) :=
+  λ i j a b => hlevel 4 truncS2m2
+
 #kconv (λ (B : Type) (h : is2Groupoid B) (b : B) (sf : Path (Path B b b) refl refl)
   (m : Path (Path (Path B b b) refl refl) sf (λ i j => sf j i)) (i j : I)
   => recS2m2 B h b sf m (surf i j)) = (λ B h b sf m i j => sf i j)
