@@ -46,11 +46,11 @@ Goals:
       usable enough to comfortably write "Brunerie-number" examples
       without postulates.
 - [x] Be fast enough to check my [computational proof that
-      $`\pi_4\mathbb{S}^3`$ is
-      nontrivial](./Kleenextt/Examples/Pi4S3.lean). It seems hopeless
-      to compute this example in Cubical Agda today. It might be
-      feasible to compute an analogous example in `cctt`, but I never
-      managed to do it.
+      $`\pi_4\mathbb{S}^3`$ is nontrivial](./examples/Pi4S3.ktt). It
+      seems hopeless to compute this example in Cubical Agda today. It
+      might be feasible to compute an analogous example in `cctt`, but
+      I never managed to do it. Currently in kleenextt, this example
+      checks in around 6 minutes and 10GB of RAM, for me.
 - [x] Don't be written in Haskell.
 
 ## How to try it
