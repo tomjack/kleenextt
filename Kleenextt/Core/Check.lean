@@ -239,7 +239,7 @@ mutual
       let h ← check cxt h hty
       -- Above the level, over a family, `h` is weakened up to the dimension.
       let aTm := quote G cxt.lvl a
-      let dependent := ls.any fun l => (Val.vars G a).testBit l
+      let dependent := ls.any fun l => hasLevel (Val.vars G a) l
       let h := if dependent then
           (List.range (m - n)).foldl (fun h k => .app (.app (isOfHLevelSucTm (n + k)) aTm .expl) h .expl) h
         else h

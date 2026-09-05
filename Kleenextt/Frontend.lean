@@ -289,8 +289,9 @@ private def elabDef (st : KState) (x : Ident) (a t : TSyntax `kexpr) : IO KState
         let tm ← check cxt (← toRaw t) (eval G cxt.lvl [] cxt.env ty)
         pure (ty, tm) : ElabM (Tm × Tm)).run G
     pure (← zonk G cxt.env cxt.lvl ty, ← zonk G cxt.env cxt.lvl tm)
-  -- `KDEF_TRACE`: as `#trace`.
-  let r ← if (← IO.getEnv "KDEF_TRACE").isNone then pure (r ()) else do
+  -- `KDEF_TRACE`: as `#trace`; `KDEF_TIME`: one line per definition, on
+  -- the elaborating thread.
+  let r ← if (← IO.getEnv "KDEF_TRACE").isSome then do
     let err ← IO.FS.Handle.mk ((← IO.getEnv "KTRACE_LOG").getD "/dev/stderr") .append
     Stats.reset
     let t0 ← IO.monoMsNow
@@ -303,6 +304,16 @@ private def elabDef (st : KState) (x : Ident) (a t : TSyntax `kexpr) : IO KState
       err.flush
       done ← IO.hasFinished task
     IO.ofExcept task.get
+  else if (← IO.getEnv "KDEF_TIME").isSome then do
+    let err ← IO.FS.Handle.mk ((← IO.getEnv "KTRACE_LOG").getD "/dev/stderr") .append
+    Stats.reset
+    let t0 ← IO.monoMsNow
+    let r ← IO.lazyPure fun _ => r ()
+    let ms := (← IO.monoMsNow) - t0
+    err.putStrLn s!"[{x.getId} {ms} ms, {← residentMB} MB] {(← Stats.read).pretty}"
+    err.flush
+    pure r
+  else pure (r ())
   let (ty, tm) ← liftE r
   pure { st with defs := st.defs.push { name := x.getId.toString, ty, tm } }
 

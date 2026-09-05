@@ -51,6 +51,11 @@ generators. -/
 def Face.conj (κ δ : Face) : Face :=
   (κ.meet δ).getD κ
 
+/-- In a support bitmask, level `l` is bit `l + 1`; bit 0 is `openBit`. -/
+def levelBit (l : Nat) : Nat := 1 <<< (l + 1)
+
+def hasLevel (vs l : Nat) : Bool := vs.testBit (l + 1)
+
 /-- A substitution of interval expressions for levels. -/
 abbrev Subst := List (Nat × IExpr)
 
@@ -72,12 +77,16 @@ def comp (σ τ : Subst) : Subst :=
 
 /-- The levels substituted, as a bitmask. -/
 def domain (σ : Subst) : Nat :=
-  σ.foldl (fun acc (l, _) => acc ||| 1 <<< l) 0
+  σ.foldl (fun acc (l, _) => acc ||| levelBit l) 0
 
 end Subst
 
 def Face.toSubst (α : Face) : Subst :=
   α.map fun (l, d) => (l, .ofBool d)
+
+/-- The equations on the levels of a support. -/
+def Face.toSubstOn (α : Face) (vs : Nat) : Subst :=
+  α.filterMap fun (l, d) => if hasLevel vs l then some (l, .ofBool d) else none
 
 /-! ## Support: the levels a value may mention, as a bitmask -/
 
@@ -85,20 +94,20 @@ class Vars (α : Type) where
   vars : α → Nat
 
 def levelSet (ls : List Nat) : Nat :=
-  ls.foldl (· ||| 1 <<< ·) 0
+  ls.foldl (· ||| levelBit ·) 0
 
 def clearLevel (vs l : Nat) : Nat :=
-  if vs.testBit l then vs - (1 <<< l) else vs
+  if hasLevel vs l then vs - levelBit l else vs
 
-/-- Above every level, set in the support of a value mentioning a fibrant
-variable or a metavariable. Without it a value is closed in cctt's sense
-(free interval variables allowed), so canonicity applies to it. -/
-def openBit : Nat := 1 <<< 62
+/-- Set in the support of a value mentioning a fibrant variable or a
+metavariable. Without it a value is closed in cctt's sense (free interval
+variables allowed), so canonicity applies to it. -/
+def openBit : Nat := 1
 
 /-- The levels a value with support `vs` may mention after `σ`. -/
 def Subst.varsUnder (σ : Subst) (vs : Nat) : Nat :=
   σ.foldl (init := σ.foldl (fun acc (l, _) => clearLevel acc l) vs) fun acc (l, r) =>
-    if vs.testBit l then acc ||| levelSet r.vars else acc
+    if hasLevel vs l then acc ||| levelSet r.vars else acc
 
 /-- For terms, names, indices, and context sizes. -/
 abbrev Vars.none : Vars α := ⟨fun _ => 0⟩
@@ -113,6 +122,25 @@ instance : Vars Tm := .none
 instance : Vars String := .none
 instance : Vars Nat := .none
 instance : Vars Icit := .none
+
+/-- A captured cofibration restricted to the levels of a support: its other
+equations concern variables nothing in the closure mentions. Faces paired
+with components are a system's, kept. -/
+class Prune (α : Type) where
+  prune : Nat → α → α
+
+abbrev Prune.id : Prune α := ⟨fun _ a => a⟩
+
+instance : Prune Face := ⟨fun vs κ => κ.filter fun (l, _) => hasLevel vs l⟩
+instance [Prune α] [Prune β] : Prune (α × β) := ⟨fun vs (a, b) => (Prune.prune vs a, Prune.prune vs b)⟩
+instance [Prune β] : Prune (Face × β) := ⟨fun vs (α, b) => (α, Prune.prune vs b)⟩
+instance [Prune α] : Prune (List α) := ⟨fun vs xs => xs.map (Prune.prune vs)⟩
+instance : Prune IExpr := .id
+instance : Prune Tm := .id
+instance : Prune String := .id
+instance : Prune Nat := .id
+instance : Prune Bool := .id
+instance : Prune Icit := .id
 
 /-! ## Templates: closed definitions the rules unfold -/
 
@@ -223,6 +251,7 @@ def DataInfo.hit (d : DataInfo) : Bool :=
 
 defun Line (L : Nat) (i : IExpr) : Val
   deriving vars : Nat folding (· ||| ·) 0 via Vars.vars := Val.vars
+  deriving prune (vs : Nat) via Prune.prune := fun _ v => v
 in
 
 mutual
@@ -297,6 +326,7 @@ def Globals.con? (G : Globals) (c : String) : Option (DataInfo × ConInfo) :=
   G.datas.findSome? fun d => (d.cons.find? (·.name == c)).map (d, ·)
 
 instance [Vars Val] : Vars Closure := ⟨fun c => match c with | .mk env _ => Vars.vars env⟩
+instance : Prune Closure := .id
 
 /-- In a system, the face's generators count. -/
 instance [Vars Val] : Vars (Face × Val) := ⟨fun (α, u) => levelSet (α.map (·.1)) ||| Vars.vars u⟩
@@ -408,11 +438,11 @@ mutual
   /-- The head under `κ`, applied at the head only; free when `v` mentions
   none of `κ`'s generators. -/
   partial def frc (L : Nat) (κ : Face) (v : Val) : Val :=
-    if κ.isEmpty then v.whnf else (act L κ κ.toSubst v).whnf
+    if κ.isEmpty then v.whnf else gauge .maxFace κ.length <| (act L κ (κ.toSubstOn v.vars) v).whnf
 
   /-- `frc` short of unfolding a definition. -/
   partial def frcG (L : Nat) (κ : Face) (v : Val) : Val :=
-    if κ.isEmpty then v.whnfG else (act L κ κ.toSubst v).whnfG
+    if κ.isEmpty then v.whnfG else (act L κ (κ.toSubstOn v.vars) v).whnfG
 
   partial def lineApp (L : Nat) (κ : Face) (f : Val) (r : IExpr) : Val :=
     match frcG L κ f with
@@ -611,7 +641,9 @@ mutual
   /-- Body memoised at the fresh level `L`; the closure carries the
   cofibration it runs under. -/
   partial def mkLine (L : Nat) (c : Line) : Val :=
-    tick .lines <| .line L (Thunk.mk fun _ => tick .bodies <| gauge .maxLevel (L + 1) <| c.apply (L + 1) (.var L)) (Line.vars c)
+    let vs := Line.vars c
+    let c := Line.prune vs c
+    tick .lines <| .line L (Thunk.mk fun _ => tick .bodies <| gauge .maxLevel (L + 1) <| c.apply (L + 1) (.var L)) vs
 
   /-- A line from a body mentioning the fresh level `L`. -/
   partial def mkBind (L : Nat) (body : Val) : Val :=
@@ -619,7 +651,9 @@ mutual
 
   /-- A deferred computation with the support of its captures. -/
   partial def mkLazy (L : Nat) (c : Line) : Val :=
-    tick .lazies <| .lazy (Line.vars c) (Thunk.mk fun _ => tick .lazyBodies <| c.apply L .zero)
+    let vs := Line.vars c
+    let c := Line.prune vs c
+    tick .lazies <| .lazy vs (Thunk.mk fun _ => tick .lazyBodies <| c.apply L .zero)
 
   partial def cache (v : Val) : Val :=
     tick .cacheds <| .cached v.vars v
@@ -1063,7 +1097,7 @@ mutual
       let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
       -- Over a family: the endpoints transported to the point, which at the
       -- ends is a transport with `r = 1`, so no correction is needed.
-      if (Val.vars A).testBit l then
+      if hasLevel (Val.vars A) l then
         let Al := Val.line l (Thunk.pure A) (clearLevel (Val.vars A) l)
         let f0 := lineApp L κ (transpFill L κ Al .zero x0) (.var l)
         let f1 := lineApp L κ (transpFill L κ (revLine L κ Al) .zero x1) (.neg (.var l))
@@ -1075,7 +1109,7 @@ mutual
       let sys' := sys.filterMap fun (α, w) =>
         if α.mentions l then none else some (α, Val.line l (Thunk.pure w) (clearLevel (Val.vars w) l))
       let (P, h') :=
-        if (Val.vars A).testBit l then
+        if hasLevel (Val.vars A) l then
           -- The h-level of `PathP (λ l. A) x₀ x₁` is that of
           -- `Path (A 1) (transp A x₀) x₁`, transported back along
           -- `t ↦ PathP (λ j. A (t ∨ j)) (transpFill A x₀ t) x₁`.

@@ -48,12 +48,14 @@ inductive Counter where
   | insts
   /-- the highest level a line body was computed at: a gauge, not a count -/
   | maxLevel
+  /-- the largest cofibration `frc` worked under: a gauge -/
+  | maxFace
   deriving Repr, Inhabited
 
 def Counter.all : List Counter :=
   [.hcomp, .hcompSigma, .hcompPath, .hcompHIT, .hcompData, .hcompDataClosed, .hcompGlue, .hcompHU, .hcompU, .hcompStuck,
    .transp, .transpSigma, .transpPath, .transpStuck, .transpGlue, .transpHU, .lemEq, .splitHcomp,
-   .act, .actNodes, .subs, .lazies, .lazyBodies, .cacheds, .lines, .bodies, .insts, .maxLevel]
+   .act, .actNodes, .subs, .lazies, .lazyBodies, .cacheds, .lines, .bodies, .insts, .maxLevel, .maxFace]
 
 def Counter.name : Counter → String
   | .hcomp => "hcomp"
@@ -84,6 +86,7 @@ def Counter.name : Counter → String
   | .bodies => "bodies"
   | .insts => "instantiations"
   | .maxLevel => "max level"
+  | .maxFace => "max face"
 
 abbrev Stats := Array Nat
 

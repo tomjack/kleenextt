@@ -26,9 +26,11 @@ Cubical Agda, ABCFHL validity is not enforced on user systems
 vanish. Enforcing it would reject `hcomp [ (i=0) ↦ u ] u₀`.
 
 Right-nested composition: `examples/Winding.ktt` winds a thousand loops in
-0.14 s as `((refl ∙ loop) ∙ …) ∙ loop` and 4.5 s as `loop ∙ (… ∙ refl)`,
-a hundred in 12 ms and 41 ms, so the right-nested case is quadratic where
-cctt's `test1` winds a million in 8 s.
+0.14 s as `((refl ∙ loop) ∙ …) ∙ loop` and 0.67 s as `loop ∙ (… ∙ refl)`,
+a hundred in 11 ms and 17 ms. Each loop's `(i = 1)` side is a line created
+inside the previous side's body, so the levels reach 1002 (`max level`)
+and the support bitmasks are boxed; cctt winds a million in 8.9 s either
+way with an interval scope of 15.
 
 Parallelism: the evaluator is pure and `Globals` read-only, so fork-join
 with `Task.spawn` is deterministic. Candidates: the sides of a system in
@@ -82,6 +84,12 @@ Support is cached in compound values (`generator` 9.0 s to 3.8 s); what
 remains is flat. Restriction is a cofibration `κ` in scope, not an
 operation (Eval.lean's module doc); a captured cofibration is not part of a
 closure's support, and a face scope's captures are pre-restricted once.
+Since the captures mention none of the other variables, `mkLine` and
+`mkLazy` prune the captured cofibration to their support (`Line.prune`),
+and `frc` takes only the equations on the value's support: the sides of a
+nested composition are otherwise evaluated under every enclosing face, a
+cofibration of a thousand equations for a thousand right-nested loops
+(`max face`), 4.5 s where pruning gives 0.67 s.
 That took `brunerieW` from 13 minutes and 21 GB to 32 s and 2.7 GB, and
 made the off-face garbage the old rules could produce (a fibre built from
 a type not restricted to its face) unwritable; `splitApp`, `unglueU'` and
