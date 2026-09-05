@@ -1,11 +1,8 @@
-import Kleenextt.Examples.Tubes
+import Tubes
 
 /-! `Stuff/Pi3JS2/LocalGlobal.agda`: `Z A` against `Ω2 Type A`, `local` by
 transport and `global` by `Glue`, inverse up to a path; `local` of `±EH⋆`
 is the composite of the two loops, either way round. -/
-
-namespace Kleenextt.Examples.LocalGlobal
-open Tubes
 
 kdef loc : (A : Type) → Ω2 Type A → Z A := λ A P => λ i => λ x => transp (λ j => P i j) (¬ i ∨ i) x
 
@@ -155,5 +152,3 @@ kdef globalEq : (A : Type) (α β : Ω2 Type A) → Path (Z A) (loc A α) (loc A
              (k = 1) ↦ (β i j, localFill A β i j, localFillIsEquiv A β i j) ]
 kdef globalLocal : (A : Type) (α : Ω2 Type A) → Path (Ω2 Type A) (global A (loc A α)) α :=
   λ A α => globalEq A (global A (loc A α)) α (localGlobal A (loc A α))
-
-end Kleenextt.Examples.LocalGlobal

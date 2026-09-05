@@ -1,10 +1,7 @@
-import Kleenextt.Examples.Brunerie
+import Brunerie
 
 /-! The rest of cctt's `brunerie_james_revised.cctt`. Not in the default
 build. -/
-
-namespace Kleenextt.Examples.Brunerie
-open Prelude
 
 kdef Ω4 : (A : Type) → A → Type := λ A x => Ω (Ω3 A x) refl
 kdef isSet : Type → Type := λ A => (a b : A) → isProp (Path A a b)
@@ -100,5 +97,3 @@ kdef ouch : Ω3 J2S2 jbase := λ i j k => toJ2S2 (genπ4S3 i j k)
 
 kdef terribleCheat : J2S2 → S2 :=
   λ x => case x (λ _ => S2) [ jbase ↦ base2, jsurf i j ↦ loop2 i j, jsurfsurf i j a b ↦ sorry ]
-
-end Kleenextt.Examples.Brunerie

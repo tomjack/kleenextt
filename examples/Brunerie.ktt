@@ -1,10 +1,7 @@
-import Kleenextt.Examples.Prelude
+import Prelude
 
 /-! cctt's `tests/brunerie_james_revised.cctt` up to `brunerie`, in CCHM
 style after cubicaltt's `examples/brunerie_james.ctt`. -/
-
-namespace Kleenextt.Examples.Brunerie
-open Prelude
 
 kdata Nat := zero | suc (n : Nat)
 kdata Int := pos (n : Nat) | neg (n : Nat)
@@ -154,5 +151,3 @@ kdef W22 : (A : Type) (x : A) (α β : Ω2 A x) → Ω3 A x :=
                          (k = 0) ↦ α i (¬ l), (k = 1) ↦ β j l ]) x)
 
 kdef brunerieW : Int := writhe (W22 S2 base2 (λ i j => loop2 i j) (λ i j => loop2 i j))
-
-end Kleenextt.Examples.Brunerie

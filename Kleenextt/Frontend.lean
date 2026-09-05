@@ -1,89 +1,12 @@
-import Lean
+import Kleenextt.Syntax
 import Kleenextt.Core.Check
 
-/-! The `kexpr` syntax category, of existing Lean tokens only, and commands
-running the Kleenextt elaborator at Lean elaboration time. Cubical
-primitives are identifiers `toRaw` recognises at the head of an
-application; faces are `(i = 0)`/`(i = 1)` on variables, juxtaposed. -/
+/-! From `kcmd` syntax to the elaborator: a `.ktt` file is a sequence of
+commands run against a `KState`, whose imports are other `.ktt` files. -/
 
 namespace Kleenextt.Frontend
 
-open Lean Elab Command
-open Core
-
-/-- Zonked core terms in the context of the preceding definitions. -/
-structure KDef where
-  name : String
-  ty : Tm
-  tm : Tm
-
-initialize kDefsExt : SimplePersistentEnvExtension KDef (Array KDef) ←
-  registerSimplePersistentEnvExtension {
-    addEntryFn := Array.push
-    addImportedFn := Array.flatten
-  }
-
-/-- Most recent first. -/
-initialize kDatasExt : SimplePersistentEnvExtension DataInfo (List DataInfo) ←
-  registerSimplePersistentEnvExtension {
-    addEntryFn := fun xs x => x :: xs
-    addImportedFn := fun xss => xss.flatten.reverse.toList
-  }
-
-/-- Every `kdef` so far, evaluated in order, in an empty context. -/
-def kCxt (defs : Array KDef) (datas : List DataInfo) : Cxt × Globals :=
-  let G := defs.foldl (init := { datas : Globals }) fun G d =>
-    let v := Thunk.mk fun _ => eval G 0 [] [] d.tm
-    { G with defs := (d.name, v, eval G 0 [] [] d.ty) :: G.defs }
-  ({}, G)
-
-declare_syntax_cat kexpr
-declare_syntax_cat kbinder
-declare_syntax_cat kpibinder
-declare_syntax_cat kface
-declare_syntax_cat kentry
-declare_syntax_cat kcase
-declare_syntax_cat kcon
-
-syntax ident : kbinder
-syntax "_" : kbinder
-syntax "(" ident+ " : " kexpr ")" : kbinder
-syntax "{" ident "}" : kbinder
-syntax "{" ident " := " ident "}" : kbinder
-
-syntax "(" ident+ " : " kexpr ")" : kpibinder
-syntax "{" ident+ " : " kexpr "}" : kpibinder
-syntax "{" ident+ "}" : kpibinder
-
-syntax "(" ident " = " num ")" : kface
-syntax kface+ " ↦ " kexpr : kentry
-syntax ident ident* " ↦ " kexpr : kcase
-syntax ident kpibinder* ("[" kentry,* "]")? : kcon
-
-syntax:max ident : kexpr
-syntax:max "Type" : kexpr
-syntax:max "sorry" : kexpr
-syntax:max "case " kexpr:max kexpr:max "[" kcase,* "]" : kexpr
-syntax:max "hlevel " num kexpr:max : kexpr
-syntax:max "_" : kexpr
-syntax:max num : kexpr
-syntax:max "(" kexpr ")" : kexpr
-syntax:max "(" kexpr ", " kexpr,+ ")" : kexpr
-syntax:max "[" kentry,* "]" : kexpr
-syntax:60 kexpr:60 kexpr:61 : kexpr
-syntax:60 kexpr:60 "{" kexpr "}" : kexpr
-syntax:60 kexpr:60 "{" ident " := " kexpr "}" : kexpr
-syntax:40 "¬" kexpr:40 : kexpr
-syntax:35 kexpr:36 " ∧ " kexpr:35 : kexpr
-syntax:30 kexpr:31 " ∨ " kexpr:30 : kexpr
-syntax:35 "(" ident " : " kexpr ")" " × " kexpr:35 : kexpr
-syntax:35 kexpr:36 " × " kexpr:35 : kexpr
-syntax:25 kexpr:26 " → " kexpr:25 : kexpr
-syntax:25 kpibinder+ " → " kexpr:25 : kexpr
-syntax:25 kexpr:26 " -> " kexpr:25 : kexpr
-syntax:25 kpibinder+ " -> " kexpr:25 : kexpr
-syntax:10 "λ" kbinder+ " => " kexpr:10 : kexpr
-syntax:10 "let " ident " : " kexpr " := " kexpr "; " kexpr:10 : kexpr
+open Lean Core
 
 private def binderToRaw (toRaw : TSyntax `kexpr → Except String Raw) :
     TSyntax `kbinder → Except String (List (String × ArgKind × Option Raw))
@@ -261,37 +184,79 @@ partial def toRaw : TSyntax `kexpr → Except String Raw
     pure (.letE x.getId.toString (← toRaw a) (← toRaw t) (← toRaw u))
   | stx => throw s!"unsupported syntax: {stx.raw.getKind}"
 
-private def orThrowAt [Monad m] [MonadError m] (ref : Syntax) : Except String α → m α
-  | .error msg => throwErrorAt ref msg
+/-- Zonked core terms in the context of the preceding definitions. -/
+structure KDef where
+  name : String
+  ty : Tm
+  tm : Tm
+
+/-- A checked file's own definitions, in order; `path` is real. -/
+structure KModule where
+  path : String
+  defs : Array KDef
+  datas : Array DataInfo
+
+/-- Imports first, in dependency order, then the file's own definitions. -/
+structure KState where
+  imports : Array KModule := #[]
+  defs : Array KDef := #[]
+  datas : Array DataInfo := #[]
+
+namespace KState
+
+def allDefs (st : KState) : Array KDef :=
+  st.imports.foldl (fun acc m => acc ++ m.defs) #[] ++ st.defs
+
+def allDatas (st : KState) : Array DataInfo :=
+  st.imports.foldl (fun acc m => acc ++ m.datas) #[] ++ st.datas
+
+/-- Every definition so far, evaluated in order, in an empty context. -/
+def cxt (st : KState) : Cxt × Globals :=
+  let G := st.allDefs.foldl (init := { datas := st.allDatas.toList.reverse : Globals }) fun G d =>
+    let v := Thunk.mk fun _ => eval G 0 [] [] d.tm
+    { G with defs := (d.name, v, eval G 0 [] [] d.ty) :: G.defs }
+  ({}, G)
+
+/-- Add an import's closure, skipping modules already present. -/
+def addImports (st : KState) (closure : Array KModule) : KState :=
+  closure.foldl (init := st) fun st m =>
+    if st.imports.any (·.path == m.path) then st else { st with imports := st.imports.push m }
+
+def toModule (st : KState) (path : String) : KModule :=
+  { path, defs := st.defs, datas := st.datas }
+
+end KState
+
+private def liftE : Except String α → IO α
+  | .error msg => throw (IO.userError msg)
   | .ok a => pure a
 
-private def currentCxt : CommandElabM (Cxt × Globals) := do
-  let env ← getEnv
-  pure (kCxt (kDefsExt.getState env) (kDatasExt.getState env))
+private def infoOf (cxt : Cxt) (G : Globals) (e : TSyntax `kexpr) : IO (Tm × Val × Globals) := do
+  liftE do
+    let ((t, a), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
+    pure (t, a, G)
 
-/-- `kdata D := c (x : A) … (i : I) … [ (i = 0) ↦ t, … ] | …`. Field types
-see the previous fields and other inductive types, not `kdef`s. -/
-elab "kdata " x:ident " := " cons:sepBy(kcon, " | ") : command => do
-  let (_, G) ← currentCxt
+private def elabData (st : KState) (x : Ident) (cons : Array (TSyntax `kcon)) : IO KState := do
+  let (_, G) := st.cxt
   let name := x.getId.toString
   let mut d : DataInfo := { name, cons := [] }
-  for con in cons.getElems do
+  for con in cons do
     let (cname, binders, boundary) ← match con with
       | `(kcon| $c:ident $bs:kpibinder* $[[$es,*]]?) => do
-        let bs ← orThrowAt con (bs.toList.mapM (piBinderToRaw toRaw))
+        let bs ← liftE (bs.toList.mapM (piBinderToRaw toRaw))
         let es := match es with
           | some es => es.getElems.toList
           | none => []
-        let es ← orThrowAt con (entriesToRaw toRaw es)
+        let es ← liftE (entriesToRaw toRaw es)
         pure (c.getId.toString, bs.flatten, es)
-      | _ => throwErrorAt con "unsupported constructor"
+      | _ => throw (IO.userError "unsupported constructor")
     let isI : Raw → Bool
       | .var "I" => true
       | _ => false
     let fields := binders.takeWhile fun (_, _, a) => !isI a
     let ivars := binders.drop fields.length
     unless ivars.all (fun (_, _, a) => isI a) do
-      throwErrorAt con "interval binders must come after the fields"
+      throw (IO.userError "interval binders must come after the fields")
     let G' := { G with datas := d :: G.datas }
     let r : Except String ConInfo := do
       let (c, _) ← (do
@@ -311,12 +276,12 @@ elab "kdata " x:ident " := " cons:sepBy(kcon, " | ") : command => do
         pure ({ name := cname, fields, ivars := ivars.map (·.1), boundary := entries } : ConInfo)
         : ElabM ConInfo).run G'
       pure c
-    let con ← orThrowAt con r
+    let con ← liftE r
     d := { d with cons := d.cons ++ [con] }
-  modifyEnv (kDatasExt.addEntry · d)
+  pure { st with datas := st.datas.push d }
 
-elab "kdef " x:ident " : " a:kexpr " := " t:kexpr : command => do
-  let (cxt, G) ← currentCxt
+private def elabDef (st : KState) (x : Ident) (a t : TSyntax `kexpr) : IO KState := do
+  let (cxt, G) := st.cxt
   let r : Unit → Except String (Tm × Tm) := fun _ => do
     let ((ty, tm), G) ← (do
         let ty ← checkType cxt (← toRaw a)
@@ -338,63 +303,8 @@ elab "kdef " x:ident " : " a:kexpr " := " t:kexpr : command => do
       err.flush
       done ← IO.hasFinished task
     IO.ofExcept task.get
-  let (ty, tm) ← orThrowAt x r
-  modifyEnv (kDefsExt.addEntry · { name := x.getId.toString, ty, tm })
-
-elab tk:"#knf " e:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  let r : Except String (String × String) := do
-    let ((t, a), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
-    pure ((nf G cxt.env t).pretty 0 cxt.names, cxt.showVal G a)
-  let (n, ty) ← orThrowAt e r
-  logInfoAt tk m!"{n}\n  : {ty}"
-
-/-- Timings, counters, and the start of the normal form. -/
-elab tk:"#ktime " e:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  let r : Except String (Tm × Globals) := do
-    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
-    pure (t, G)
-  let (t, G) ← orThrowAt e r
-  Stats.reset
-  let t0 ← IO.monoMsNow
-  let v ← IO.lazyPure fun _ => eval G cxt.lvl [] cxt.env t
-  let t1 ← IO.monoMsNow
-  let n ← IO.lazyPure fun _ => (quote G cxt.lvl v true).pretty 0 cxt.names
-  let t2 ← IO.monoMsNow
-  let s ← Stats.read
-  let shown := if n.length > 200 then String.ofList (n.toList.take 200) ++ "…" else n
-  logInfoAt tk m!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {shown}"
-
-/-- `#ktime`, sampling counters and resident size every two seconds through
-a fresh stderr handle (or `KTIME_LOG`), since the elaborator captures the
-standard streams. -/
-elab tk:"#ktrace " e:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  let r : Except String (Tm × Globals) := do
-    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
-    pure (t, G)
-  let (t, G) ← orThrowAt e r
-  let err ← IO.FS.Handle.mk ((← IO.getEnv "KTIME_LOG").getD "/dev/stderr") .append
-  Stats.reset
-  let t0 ← IO.monoMsNow
-  let task ← IO.asTask (prio := .dedicated) do
-    let v ← IO.lazyPure fun _ => eval G cxt.lvl [] cxt.env t
-    let t1 ← IO.monoMsNow
-    let n ← IO.lazyPure fun _ => (quote G cxt.lvl v true).pretty 0 cxt.names
-    pure (t1, n)
-  let mut done := false
-  while !done do
-    IO.sleep 2000
-    let ms := (← IO.monoMsNow) - t0
-    err.putStrLn s!"[{ms / 1000} s, {← residentMB} MB] {(← Stats.read).pretty}"
-    err.flush
-    done ← IO.hasFinished task
-  let (t1, n) ← IO.ofExcept task.get
-  let t2 ← IO.monoMsNow
-  let s ← Stats.read
-  let shown := if n.length > 200 then String.ofList (n.toList.take 200) ++ "…" else n
-  logInfoAt tk m!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {shown}"
+  let (ty, tm) ← liftE r
+  pure { st with defs := st.defs.push { name := x.getId.toString, ty, tm } }
 
 private def showFaces {α : Type} (sys : List (Face × α)) : String :=
   "[" ++ ", ".intercalate (sys.map fun (α, _) =>
@@ -429,39 +339,84 @@ private partial def headInfo (v : Val) (depth : Nat := 3) : String :=
   | .glued n sp _ => s!"{n}/{sp.length}"
   | .sub .. | .lazy .. | .cached .. => "unforced"
 
-elab tk:"#kterm " e:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  let r : Except String (String × String) := do
-    let ((t, a), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
-    pure ((← zonk G cxt.env cxt.lvl t).pretty 0 cxt.names, cxt.showVal G a)
-  let (t, ty) ← orThrowAt e r
-  logInfoAt tk m!"{t}\n  : {ty}"
+private def truncate (n : Nat) (s : String) : String :=
+  if s.length > n then String.ofList (s.toList.take n) ++ "…" else s
+
+/-- The normal form of `e` and its type, as `#knf`. -/
+def normalize (st : KState) (e : TSyntax `kexpr) : IO String := do
+  let (cxt, G) := st.cxt
+  let (t, a, G) ← infoOf cxt G e
+  pure s!"{(nf G cxt.env t).pretty 0 cxt.names}\n  : {cxt.showVal G a}"
+
+/-- Timings, counters, and the start of the normal form. -/
+private def time (st : KState) (e : TSyntax `kexpr) : IO String := do
+  let (cxt, G) := st.cxt
+  let (t, _, G) ← infoOf cxt G e
+  Stats.reset
+  let t0 ← IO.monoMsNow
+  let v ← IO.lazyPure fun _ => eval G cxt.lvl [] cxt.env t
+  let t1 ← IO.monoMsNow
+  let n ← IO.lazyPure fun _ => (quote G cxt.lvl v true).pretty 0 cxt.names
+  let t2 ← IO.monoMsNow
+  let s ← Stats.read
+  pure s!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {truncate 200 n}"
+
+/-- `#ktime`, sampling counters and resident size every two seconds through
+a fresh stderr handle (or `KTIME_LOG`), since the elaborator captures the
+standard streams. -/
+private def trace (st : KState) (e : TSyntax `kexpr) : IO String := do
+  let (cxt, G) := st.cxt
+  let (t, _, G) ← infoOf cxt G e
+  let err ← IO.FS.Handle.mk ((← IO.getEnv "KTIME_LOG").getD "/dev/stderr") .append
+  Stats.reset
+  let t0 ← IO.monoMsNow
+  let task ← IO.asTask (prio := .dedicated) do
+    let v ← IO.lazyPure fun _ => eval G cxt.lvl [] cxt.env t
+    let t1 ← IO.monoMsNow
+    let n ← IO.lazyPure fun _ => (quote G cxt.lvl v true).pretty 0 cxt.names
+    pure (t1, n)
+  let mut done := false
+  while !done do
+    IO.sleep 2000
+    let ms := (← IO.monoMsNow) - t0
+    err.putStrLn s!"[{ms / 1000} s, {← residentMB} MB] {(← Stats.read).pretty}"
+    err.flush
+    done ← IO.hasFinished task
+  let (t1, n) ← IO.ofExcept task.get
+  let t2 ← IO.monoMsNow
+  let s ← Stats.read
+  pure s!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {truncate 200 n}"
+
+private def term (st : KState) (e : TSyntax `kexpr) : IO String := do
+  let (cxt, G) := st.cxt
+  let (t, a, G) ← infoOf cxt G e
+  let t ← liftE (zonk G cxt.env cxt.lvl t)
+  pure s!"{t.pretty 0 cxt.names}\n  : {cxt.showVal G a}"
+
+private def type (st : KState) (e : TSyntax `kexpr) : IO String := do
+  let (cxt, G) := st.cxt
+  let (_, a, G) ← infoOf cxt G e
+  pure (cxt.showVal G a)
+
+/-- `e` applied to `k` fresh interval variables. -/
+private def atFresh (st : KState) (k : Nat) (e : TSyntax `kexpr) : IO (Cxt × Globals × Val × List String) := do
+  let (cxt, G) := st.cxt
+  let (t, _, G) ← infoOf cxt G e
+  let names := (List.range k).foldl (fun ns n => s!"v{n}" :: ns) cxt.names
+  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) [] v (.var (cxt.lvl + n))) (eval G cxt.lvl [] cxt.env t)
+  pure (cxt, G, v, names)
 
 /-- The head after `k` fresh interval binders, with its system faces. -/
-elab tk:"#khead " k:num e:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  let r : Except String (Tm × Globals) := do
-    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
-    pure (t, G)
-  let (t, G) ← orThrowAt e r
-  let k := k.getNat
-  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) [] v (.var (cxt.lvl + n))) (eval G cxt.lvl [] cxt.env t)
+private def head (st : KState) (k : Nat) (e : TSyntax `kexpr) : IO String := do
+  let (cxt, _, v, _) ← atFresh st k e
   let s ← IO.lazyPure fun _ => headInfo v
-  logInfoAt tk s!"levels {cxt.lvl}..{cxt.lvl + k}: {s}"
+  pure s!"levels {cxt.lvl}..{cxt.lvl + k}: {s}"
 
 /-- After `k` fresh binders: the sides of an `hcomp` must agree on common
 faces, and at `0` with the base. -/
-elab tk:"#koverlaps " k:num e:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  let r : Except String (Tm × Globals) := do
-    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
-    pure (t, G)
-  let (t, G) ← orThrowAt e r
-  let k := k.getNat
+private def overlaps (st : KState) (k : Nat) (e : TSyntax `kexpr) : IO String := do
+  let (cxt, G, v, names) ← atFresh st k e
   let L := cxt.lvl + k
-  let names := (List.range k).foldl (fun ns n => s!"v{n}" :: ns) cxt.names
-  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) [] v (.var (cxt.lvl + n))) (eval G cxt.lvl [] cxt.env t)
-  let head (s : String) : String := if s.length > 300 then String.ofList (s.toList.take 300) ++ "…" else s
   match v.whnf with
   | .hcomp _ sys u =>
     let mut report := s!"{showFaces sys}\n"
@@ -477,80 +432,161 @@ elab tk:"#koverlaps " k:num e:kexpr : command => do
           let a ← IO.lazyPure fun _ => (quote G (L + 1) (face G (L + 1) [] γ sv)).pretty 0 ("l" :: names)
           let b ← IO.lazyPure fun _ => (quote G (L + 1) (face G (L + 1) [] γ sv')).pretty 0 ("l" :: names)
           if a != b then
-            report := report ++ s!"DISAGREE on {showFaces [(γ, ())]}:\n  {head a}\n  {head b}\n"
+            report := report ++ s!"DISAGREE on {showFaces [(γ, ())]}:\n  {truncate 300 a}\n  {truncate 300 b}\n"
       let a ← IO.lazyPure fun _ => (quote G L (face G L [] α (lineApp G L [] s .zero))).pretty 0 names
       let b ← IO.lazyPure fun _ => (quote G L (face G L [] α u)).pretty 0 names
       if a != b then
-        report := report ++ s!"side {showFaces [(α, ())]} at 0 ≠ base:\n  {head a}\n  {head b}\n"
-    logInfoAt tk report
-  | w => logInfoAt tk s!"not an hcomp: {headInfo w}"
+        report := report ++ s!"side {showFaces [(α, ())]} at 0 ≠ base:\n  {truncate 300 a}\n  {truncate 300 b}\n"
+    pure report
+  | w => pure s!"not an hcomp: {headInfo w}"
 
 /-- After `k` fresh binders: the next one at a fresh variable then
 substituted, against directly at each endpoint. -/
-elab tk:"#kstable " k:num e:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  let r : Except String (Tm × Globals) := do
-    let ((t, _), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
-    pure (t, G)
-  let (t, G) ← orThrowAt e r
-  let k := k.getNat
+private def stable (st : KState) (k : Nat) (e : TSyntax `kexpr) : IO String := do
+  let (cxt, G, v, names) ← atFresh st k e
   let L := cxt.lvl + k
-  let names := (List.range k).foldl (fun ns n => s!"v{n}" :: ns) cxt.names
-  let v := (List.range k).foldl (fun v n => lineApp G (cxt.lvl + n + 1) [] v (.var (cxt.lvl + n))) (eval G cxt.lvl [] cxt.env t)
   let generic := lineApp G (L + 1) [] v (.var L)
   let show_ (w : Val) : String := (quote G L w).pretty 0 names
-  let head (s : String) : String := if s.length > 300 then String.ofList (s.toList.take 300) ++ "…" else s
   let gen ← IO.lazyPure fun _ => headInfo generic
   let mut report := s!"generic: {gen}\n"
   for (r, name) in [(IExpr.zero, "0"), (IExpr.one, "1")] do
     let viaSub ← IO.lazyPure fun _ => show_ (act G L [] [(L, r)] generic)
     let direct ← IO.lazyPure fun _ => show_ (lineApp G L [] v r)
-    if viaSub == direct then report := report ++ s!"at {name}: stable\n  {head direct}\n"
-    else report := report ++ s!"at {name}: UNSTABLE\n  substituted: {head viaSub}\n  direct:      {head direct}\n"
-  logInfoAt tk report
-
-elab tk:"#ktype " e:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  let r : Except String String := do
-    let ((_, a), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
-    pure (cxt.showVal G a)
-  logInfoAt tk m!"{← orThrowAt e r}"
+    if viaSub == direct then report := report ++ s!"at {name}: stable\n  {truncate 300 direct}\n"
+    else report := report ++ s!"at {name}: UNSTABLE\n  substituted: {truncate 300 viaSub}\n  direct:      {truncate 300 direct}\n"
+  pure report
 
 /-- Infer the left, check the right against its type, unify; on failure both
 normal forms. -/
-private def convSides (cxt : Cxt) (a b : TSyntax `kexpr) : ElabM (Option (String × String)) := do
-  let (ta, tya) ← infer cxt (← toRaw a)
-  let tb ← check cxt (← toRaw b) tya
-  let G ← get
-  try
-    unify cxt.lvl (eval G cxt.lvl [] cxt.env ta) (eval G cxt.lvl [] cxt.env tb)
-    pure none
-  catch _ =>
+private def convSides (st : KState) (a b : TSyntax `kexpr) : IO (Option (String × String)) := do
+  let (cxt, G) := st.cxt
+  liftE <| (·.1) <$> (do
+    let (ta, tya) ← infer cxt (← toRaw a)
+    let tb ← check cxt (← toRaw b) tya
     let G ← get
-    pure (some ((nf G cxt.env ta).pretty 0 cxt.names, (nf G cxt.env tb).pretty 0 cxt.names))
-
-elab "#kconv " a:kexpr " = " b:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  match (convSides cxt a b).run G with
-  | .error e => throwErrorAt a e
-  | .ok (none, _) => pure ()
-  | .ok (some (na, nb), _) => throwErrorAt a s!"not convertible:\n  {na}\n  {nb}"
-
-elab "#kdiffer " a:kexpr " = " b:kexpr : command => do
-  let (cxt, G) ← currentCxt
-  match (convSides cxt a b).run G with
-  | .error e => throwErrorAt a e
-  | .ok (some _, _) => pure ()
-  | .ok (none, _) => throwErrorAt a "expected the sides to differ, but they are convertible"
+    try
+      unify cxt.lvl (eval G cxt.lvl [] cxt.env ta) (eval G cxt.lvl [] cxt.env tb)
+      pure none
+    catch _ =>
+      let G ← get
+      pure (some ((nf G cxt.env ta).pretty 0 cxt.names, (nf G cxt.env tb).pretty 0 cxt.names))
+    : ElabM (Option (String × String))).run G
 
 /-- Fails to elaborate, or leaves metavariables unsolved. -/
-elab "#kfail " e:kexpr : command => do
-  let (cxt, G) ← currentCxt
+private def fails (st : KState) (e : TSyntax `kexpr) : IO Bool := do
+  let (cxt, G) := st.cxt
   let r : Except String (Tm × Tm) := do
     let ((t, a), G) ← (do infer cxt (← toRaw e) : ElabM (Tm × Val)).run G
     pure (← zonk G cxt.env cxt.lvl t, ← zonk G cxt.env cxt.lvl (quote G cxt.lvl a))
-  match r with
-  | .error _ => pure ()
-  | .ok _ => throwErrorAt e "expected an elaboration error, but the term elaborated"
+  pure (match r with | .error _ => true | .ok _ => false)
+
+/-- Whether a command defines something; the others are diagnostics. -/
+def isDecl : Syntax → Bool
+  | `(kcmd| kdef $_ : $_ := $_) | `(kcmd| kdata $_ := $_|*) => true
+  | _ => false
+
+/-- Run a definition or diagnostic; `import` is the loader's. Returns the
+new state and the diagnostic's report, if any. -/
+def runCmd (st : KState) (cmd : Syntax) : IO (KState × Option String) := do
+  match cmd with
+  | `(kcmd| kdef $x:ident : $a := $t) => pure (← elabDef st x a t, none)
+  | `(kcmd| kdata $x:ident := $cons|*) => pure (← elabData st x cons.getElems, none)
+  | `(kcmd| #knf $e) => pure (st, some (← normalize st e))
+  | `(kcmd| #ktime $e) => pure (st, some (← time st e))
+  | `(kcmd| #ktrace $e) => pure (st, some (← trace st e))
+  | `(kcmd| #kterm $e) => pure (st, some (← term st e))
+  | `(kcmd| #ktype $e) => pure (st, some (← type st e))
+  | `(kcmd| #khead $k:num $e) => pure (st, some (← head st k.getNat e))
+  | `(kcmd| #koverlaps $k:num $e) => pure (st, some (← overlaps st k.getNat e))
+  | `(kcmd| #kstable $k:num $e) => pure (st, some (← stable st k.getNat e))
+  | `(kcmd| #kconv $a = $b) =>
+    match ← convSides st a b with
+    | none => pure (st, none)
+    | some (na, nb) => throw (IO.userError s!"not convertible:\n  {na}\n  {nb}")
+  | `(kcmd| #kdiffer $a = $b) =>
+    match ← convSides st a b with
+    | some _ => pure (st, none)
+    | none => throw (IO.userError "expected the sides to differ, but they are convertible")
+  | `(kcmd| #kfail $e) =>
+    if ← fails st e then pure (st, none)
+    else throw (IO.userError "expected an elaboration error, but the term elaborated")
+  | _ => throw (IO.userError s!"unsupported command: {cmd.getKind}")
+
+/-- The commands of a file, up to the first parse error, which comes with
+its position. -/
+partial def parseCmds (env : Environment) (input : String) (fileName : String) :
+    Array Syntax × Option String :=
+  let ictx := Parser.mkInputContext input fileName
+  let tokens := Parser.getTokenTable env
+  let pmctx : Parser.ParserModuleContext := { env, options := {} }
+  let rec go (s : Parser.ParserState) (acc : Array Syntax) :=
+    let s := Parser.whitespace.run ictx pmctx tokens s
+    if ictx.atEnd s.pos then (acc, none)
+    else
+      let s := (Parser.categoryParser `kcmd 0).fn.run ictx pmctx tokens s
+      if !s.allErrors.isEmpty then (acc, some (s.toErrorMsg ictx))
+      else go s (acc.push s.stxStack.back)
+  go (Parser.mkParserState input) #[]
+
+def parseExpr (env : Environment) (input : String) : Except String (TSyntax `kexpr) :=
+  (⟨·⟩) <$> Parser.runParserCategory env `kexpr input
+
+/-- Files are loaded once per run, by real path. -/
+structure Loader where
+  env : Environment
+  loaded : Std.HashMap String (Array KModule) := {}
+  loading : List String := []
+  errors : Nat := 0
+
+abbrev LoaderM := StateT Loader IO
+
+private def report (ictx : Parser.InputContext) (stx : Syntax) (severity msg : String) : IO Unit := do
+  let pos := ictx.fileMap.toPosition (stx.getPos?.getD 0)
+  let out ← if severity == "error" then IO.getStderr else IO.getStdout
+  out.putStrLn s!"{ictx.fileName}:{pos.line}:{pos.column}: {severity}: {msg}"
+
+/-- Check a file; with `diagnostics`, run its `#k…` commands too. Returns its
+import closure, dependencies first, ending with the file itself. -/
+partial def loadFile (path : System.FilePath) (diagnostics : Bool) : LoaderM (Array KModule) := do
+  let real := (← IO.FS.realPath path).toString
+  if let some closure := (← get).loaded[real]? then return closure
+  if (← get).loading.contains real then
+    throw (IO.userError s!"{path}: import cycle")
+  modify fun l => { l with loading := real :: l.loading }
+  let input ← IO.FS.readFile path
+  let ictx := Parser.mkInputContext input path.toString
+  let (cmds, parseError) := parseCmds (← get).env input path.toString
+  let mut st : KState := {}
+  for cmd in cmds do
+    match cmd with
+    | `(kcmd| import $m:ident) =>
+      if !st.defs.isEmpty || !st.datas.isEmpty then
+        report ictx cmd "error" "imports must come before definitions"
+        modify fun l => { l with errors := l.errors + 1 }
+      else
+        let file := path.parent.getD "." / (m.getId.toString.replace "." "/" ++ ".ktt")
+        st := st.addImports (← loadFile file false)
+    | _ =>
+      if cmd.getKind == ``Syntax.Cmd.moduleDoc then pure ()
+      else if diagnostics || isDecl cmd then
+        try
+          let (st', info?) ← runCmd st cmd
+          st := st'
+          if let some info := info? then report ictx cmd "info" info
+        catch e =>
+          report ictx cmd "error" (toString e)
+          modify fun l => { l with errors := l.errors + 1 }
+  if let some msg := parseError then
+    IO.eprintln msg
+    modify fun l => { l with errors := l.errors + 1 }
+  let closure := st.imports.push (st.toModule real)
+  modify fun l => { l with loaded := l.loaded.insert real closure, loading := l.loading.drop 1 }
+  pure closure
+
+/-- The state of a checked file: its imports and its own definitions. -/
+def stateOf (closure : Array KModule) : KState :=
+  match closure.back? with
+  | some own => { imports := closure.pop, defs := own.defs, datas := own.datas }
+  | none => {}
 
 end Kleenextt.Frontend

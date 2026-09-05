@@ -81,7 +81,7 @@ That took `brunerieW` from 13 minutes and 21 GB to 32 s and 2.7 GB, and
 made the off-face garbage the old rules could produce (a fibre built from
 a type not restricted to its face) unwritable; `splitApp`, `unglueU'` and
 `transp'` panic on its symptoms. Glued evaluation, and comparing system
-components under their face, took `Examples/S1Mod2.lean` from 15 s per
+components under their face, took `examples/S1Mod2.ktt` from 15 s per
 conversion of `notEqSym` to under a second in all.
 
 ## `hlevel`
@@ -92,7 +92,7 @@ rather than off the goal, and truncations as HIT constructors.
 
 ## Results
 
-`Examples/J2S2.lean`: the cheat-free `bit` of tomjack/cubical
+`examples/J2S2.ktt`: the cheat-free `bit` of tomjack/cubical
 `Stuff/Pi3JS2` is `true` in 5.5 s, where Agda's `canon` reports "not ok!".
-`Examples/Pi4S3.lean`: `π₄(S³)` is nontrivial, cctt's `hope` without its
+`examples/Pi4S3.ktt`: `π₄(S³)` is nontrivial, cctt's `hope` without its
 cheats, in 250 s and 11 GB.

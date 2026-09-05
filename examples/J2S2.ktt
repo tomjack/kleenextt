@@ -1,11 +1,7 @@
-import Kleenextt.Examples.S2Mod2
+import S2Mod2
 
 /-! `Stuff/Pi3JS2/J2S2.agda`: the family over `J₂S²` with fibre
 `S¹ × ∥S²/2∥₂`; `bit` is its value on the Hopf generator `η surf₁`. -/
-
-namespace Kleenextt.Examples.J2S2
-
-open HLevel S2Mod2 Tubes LocalGlobal
 
 kdata J2S2 := jbase
   | jsurf (i j : I) [ (i = 0) ↦ jbase, (i = 1) ↦ jbase, (j = 0) ↦ jbase, (j = 1) ↦ jbase ]
@@ -42,5 +38,3 @@ kdef bitJ : Bool := bit3 gen
 #kconv bit3 (eta J2S2 jbase (λ i j => jsurf j i)) = true
 #kconv bit3 (λ i j k => jbase) = false
 #kconv bit3 (pcomp gen gen) = false
-
-end Kleenextt.Examples.J2S2

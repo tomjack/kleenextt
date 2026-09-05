@@ -5,14 +5,27 @@ Cohen, Coquand, Huber and Mörtberg (arXiv:1611.02108) with the interval the
 free Kleene algebra rather than the free De Morgan algebra, per the remark
 in §2. Design notes in NOTES.md, literature in REFERENCES.md.
 
-`lake build` checks everything in the default target; `#kconv`, `#kdiffer`
-and `#kfail` fail the build when they fail. The library is precompiled, so
-the evaluator runs natively; `lean` by hand needs the `--load-dynlib` flags
-`lake build` passes. `#ktime` reports timings and the counters of
+`lake build` produces the self-contained executable
+`.lake/build/bin/kleenextt`, which needs nothing from the toolchain at run
+time:
+
+    kleenextt check FILE...   check `.ktt` files, running their `#k…` commands
+    kleenextt nf FILE EXPR    normalize a name or expression in FILE's context
+
+A `.ktt` file is `import`s, then `kdef`/`kdata` definitions and `#k…`
+commands. `import X` loads `X.ktt` from the same directory, transitively,
+definitions only; a file's `#k…` commands run only when it is checked
+itself. `#kconv`, `#kdiffer` and `#kfail` are errors when they fail, and any
+error makes the exit status 1. `#ktime` reports timings and the counters of
 `Core/Stats.lean`; `#ktrace`, `#khead`, `#kstable` and `#koverlaps` are
-diagnostics. Outside the default build: `Examples/Bench*`, `Hope`, `Pi4S3`.
+diagnostics. `scripts/check-examples.sh` checks the quick examples; the slow
+ones are `examples/Bench*`, `Hope` and `Pi4S3`.
 
 `Core/` is the type theory (interval, syntax, evaluation, unification,
-elaboration, the `defun` closure deriver); `Frontend.lean` embeds it in
-Lean as the `kexpr` syntax category and the `kdef`/`kdata`/`#k…` commands;
-`Examples/` holds object-level programs, `ElabZoo` and `Prelude` first.
+elaboration, the `defun` closure deriver), with no dependency on Lean's own
+library. `Syntax/` registers the `kexpr`/`kcmd`/… categories as builtin
+parsers, so they live in the binary rather than in `.olean` files; the
+compiler sees them too, since Lake loads the precompiled modules as plugins.
+`Frontend.lean` turns the syntax into `Raw` terms, runs commands against a
+`KState`, and loads files with their imports. `examples/` holds object-level
+programs, `ElabZoo` and `Prelude` first.

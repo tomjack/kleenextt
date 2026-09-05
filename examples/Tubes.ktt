@@ -1,11 +1,9 @@
-import Kleenextt.Examples.HLevel
+import HLevel
 
 /-! `Stuff/Pi3JS2/Tubes.agda`, `Extensions.agda`: a tube is a partial
 element on a cube's boundary varying along `x`; composing along it takes a
 cube with the boundary at `0` to one at `1`, the star being the composite
 of the constant cube. -/
-
-namespace Kleenextt.Examples.Tubes
 
 -- `(α,β)`-extensions.
 kdef ext11 : (A : Type) (a : A) (α β : Ω A a) → Type :=
@@ -74,5 +72,3 @@ kdef extFromPath : (A : Type) (a : A) (α β : Ω2 A a)
   λ A a α β e => diagInv22 A a α β (ehMinusStar A a α β) (λ f => ehMinusFill A a α β f)
     (λ f => hcomp (ehPlusPath A a α β f) (λ x => [ (f = 0) ↦ ehPlusFill A a α β 0, (f = 1) ↦ e x ])
               (ehPlusFill A a α β f))
-
-end Kleenextt.Examples.Tubes

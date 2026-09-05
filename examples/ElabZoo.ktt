@@ -1,8 +1,5 @@
-import Kleenextt.Frontend
 
 /-! Ported from elaboration-zoo 02 and 04. -/
-
-namespace Kleenextt.Examples.ElabZoo
 
 -- Implicit lambdas are inserted; implicit argument types may be holes.
 kdef id : {A : Type} → A → A := λ x => x
@@ -75,5 +72,3 @@ kdef tit : Type := Type
 #kfail const {C := Type}
 #kfail the Bool Type
 #kfail λ x => x
-
-end Kleenextt.Examples.ElabZoo

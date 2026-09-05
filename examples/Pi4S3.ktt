@@ -1,12 +1,8 @@
-import Kleenextt.Examples.J2S2
+import J2S2
 
 /-! `π₄(S³)` is nontrivial: `η loop3 ≠ refl` by `bit` after transport along
 the 3-cube rotating `J₂S²` by its surfaces (cctt's `hope` without its
 cheats). Not in the default build: 250 s and 11 GB. -/
-
-namespace Kleenextt.Examples.Pi4S3
-
-open HLevel S2Mod2 Tubes LocalGlobal J2S2
 
 kdata S3 := base3
   | loop3 (i j k : I) [ (i = 0) ↦ base3, (i = 1) ↦ base3, (j = 0) ↦ base3, (j = 1) ↦ base3,
@@ -58,5 +54,3 @@ kdef π4Invariant : Ω4 S3 base3 → Bool := λ q => bit3t (λ i j k => toJ (q i
 
 kdef trueNeFalse : Path Bool true false → Empty := λ e => transport (λ i => codeBool true (e i)) tt
 kdef π4S3Nontrivial : Path (Ω4 S3 base3) genπ4S3 refl → Empty := λ e => trueNeFalse (λ t => π4Invariant (e t))
-
-end Kleenextt.Examples.Pi4S3

@@ -1,11 +1,7 @@
-import Kleenextt.Examples.HLevel
+import HLevel
 
 /-! `S¹/2`, `loop ≡ sym loop`, with its 1-truncation as a constructor
 (`Stuff/Pi3JS2/S1Mod2.agda`, `Truncations.agda`). -/
-
-namespace Kleenextt.Examples.S1Mod2
-
-open HLevel
 
 kdata S1m2 := base
   | loop (i : I) [ (i = 0) ↦ base, (i = 1) ↦ base ]
@@ -72,5 +68,3 @@ kdef bit : Path S1m2 base base → Bool := λ p => transport (λ i => fst (helix
 
 #kconv (λ (B : Type) (h : isGroupoid B) (b : B) (l : Path B b b) (m : Path (Path B b b) l (λ i => l (¬ i))) (i : I)
   => recS1m2 B h b l m (loop i)) = (λ B h b l m i => l i)
-
-end Kleenextt.Examples.S1Mod2

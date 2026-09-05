@@ -1,8 +1,5 @@
-import Kleenextt.Frontend
 
 /-! Paths, transport, `ua`, and CCHM §7.1's equivalence of a line of types. -/
-
-namespace Kleenextt.Examples.Prelude
 
 kdata Bool := true | false
 kdata S1 := base | loop (i : I) [ (i = 0) ↦ base, (i = 1) ↦ base ]
@@ -51,5 +48,3 @@ kdef lineToEquivFwd : (E : I → Type) → Equiv (E 0) (E 1) := λ E =>
            (ω (j ∧ k)))))
 
 kdef lineToEquiv : (E : I → Type) → Equiv (E 1) (E 0) := λ E => lineToEquivFwd (λ i => E (¬ i))
-
-end Kleenextt.Examples.Prelude

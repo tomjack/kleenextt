@@ -1,13 +1,9 @@
-import Kleenextt.Examples.S1Mod2
-import Kleenextt.Examples.Tubes
-import Kleenextt.Examples.LocalGlobal
+import S1Mod2
+import Tubes
+import LocalGlobal
 
 /-! `S²/2`, `surf ≡ flip surf`, with its 2-truncation as a constructor
 (`Stuff/Pi3JS2/S2Mod2.agda`), and `Code` into `hGroupoid`: `π₂S²/2 → Bool`. -/
-
-namespace Kleenextt.Examples.S2Mod2
-
-open HLevel
 
 kdata S2m2 := sbase
   | surf (i j : I) [ (i = 0) ↦ sbase, (i = 1) ↦ sbase, (j = 0) ↦ sbase, (j = 1) ↦ sbase ]
@@ -159,5 +155,3 @@ kdef surfSq : Ω2 S2m2 sbase := λ i j => surf i j
 #kconv (λ (B : Type) (h : is2Groupoid B) (b : B) (sf : Path (Path B b b) refl refl)
   (m : Path (Path (Path B b b) refl refl) sf (λ i j => sf j i)) (i j : I)
   => recS2m2 B h b sf m (surf i j)) = (λ B h b sf m i j => sf i j)
-
-end Kleenextt.Examples.S2Mod2

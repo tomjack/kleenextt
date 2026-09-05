@@ -1,6 +1,10 @@
 name = "kleenextt"
-defaultTargets = ["Kleenextt"]
+defaultTargets = ["Kleenextt", "kleenextt"]
 
 [[lean_lib]]
 name = "Kleenextt"
 precompileModules = true
+
+[[lean_exe]]
+name = "kleenextt"
+root = "Main"
