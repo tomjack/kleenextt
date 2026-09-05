@@ -18,8 +18,9 @@ definitions only; a file's `#k…` commands run only when it is checked
 itself. `#kconv`, `#kdiffer` and `#kfail` are errors when they fail, and any
 error makes the exit status 1. `#ktime` reports timings and the counters of
 `Core/Stats.lean`; `#ktrace`, `#khead`, `#kstable` and `#koverlaps` are
-diagnostics. `lake test` (or `make test`) checks the quick examples; the slow
-ones are `examples/Bench*`, `Hope` and `Pi4S3`.
+diagnostics. `lake test` (or `make test`) checks the quick examples;
+`make bench` checks the slow ones, `examples/Bench*`, `Hope` and `Pi4S3`,
+one process each, reporting wall time, CPU time and peak memory.
 
 `Core/` is the type theory (interval, syntax, evaluation, unification,
 elaboration, the `defun` closure deriver), with no dependency on Lean's own
