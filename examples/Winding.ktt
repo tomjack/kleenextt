@@ -1,0 +1,25 @@
+import Brunerie
+
+/-! Winding numbers of loops built from many compositions, after cctt's
+`tests/bench/s1.cctt`; iteration by Church numerals. The transport meets
+one `hcomp Type` per loop and no `hcomp` at `Int`: the composition at the
+endpoint has a total face. -/
+
+def CNat : Type := (N : Type) → (N → N) → N → N
+def ten : CNat := λ N s z => s (s (s (s (s (s (s (s (s (s z)))))))))
+def mul : CNat → CNat → CNat := λ a b N s => a N (b N s)
+def hundred : CNat := mul ten ten
+def thousand : CNat := mul ten hundred
+
+def loop1 : Ω S1 base := λ i => loop i
+-- `loop1 ∙ (loop1 ∙ (… ∙ refl))`, cctt's `intLoop'`.
+def loopN : CNat → Ω S1 base := λ n => n (Ω S1 base) (pcomp loop1) refl
+-- `((refl ∙ loop1) ∙ …) ∙ loop1`, cctt's `intLoop`.
+def loopN' : CNat → Ω S1 base := λ n => n (Ω S1 base) (λ p => pcomp p loop1) refl
+
+#conv windingS1 (loopN ten) = pos (suc (suc (suc (suc (suc (suc (suc (suc (suc (suc zero))))))))))
+#conv windingS1 (loopN' ten) = pos (suc (suc (suc (suc (suc (suc (suc (suc (suc (suc zero))))))))))
+#time windingS1 (loopN hundred)
+#time windingS1 (loopN' hundred)
+#time windingS1 (loopN thousand)
+#time windingS1 (loopN' thousand)

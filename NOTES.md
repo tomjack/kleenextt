@@ -25,6 +25,11 @@ Cubical Agda, ABCFHL validity is not enforced on user systems
 (`IExpr.isValid` exists), and `ghcomp` is used where a `∀i.φ` face can
 vanish. Enforcing it would reject `hcomp [ (i=0) ↦ u ] u₀`.
 
+Right-nested composition: `examples/Winding.ktt` winds a thousand loops in
+0.14 s as `((refl ∙ loop) ∙ …) ∙ loop` and 4.5 s as `loop ∙ (… ∙ refl)`,
+a hundred in 12 ms and 41 ms, so the right-nested case is quadratic where
+cctt's `test1` winds a million in 8 s.
+
 Parallelism: the evaluator is pure and `Globals` read-only, so fork-join
 with `Task.spawn` is deterministic. Candidates: the sides of a system in
 `hcompData`, the two components under `transp`/`hcomp` at Σ, the children
@@ -83,6 +88,20 @@ a type not restricted to its face) unwritable; `splitApp`, `unglueU'` and
 `transp'` panic on its symptoms. Glued evaluation, and comparing system
 components under their face, took `examples/S1Mod2.ktt` from 15 s per
 conversion of `notEqSym` to under a second in all.
+
+`hcomp` at a strict inductive type follows cctt's closed rule: a value
+mentioning a fibrant variable or a metavariable carries `openBit` in its
+support, and with closed sides `hcompData` forces none of them, since by
+canonicity they share the base's constructor; each field projects them
+lazily. Closedness is a property of the value, not of the context, so the
+rule also applies inside a typechecking boundary such as `e 0` in
+`π4S3Nontrivial`. Nothing here reaches it (`hcomp data` is 0 for
+`brunerieW`, `Pi4S3` and `examples/Winding.ktt`): a closed system is total
+under `ghcomp`, and a composition at the endpoint of a `Glue` or
+`hcomp Type` line has a total face. cctt's own tests and benchmarks reach
+its rule twice, on empty systems, in `tests/tests/indtests2.cctt`. It fires
+on a composition at `Nat` written under an interval variable, as in
+`examples/Cubical.ktt`.
 
 ## `hlevel`
 

@@ -11,6 +11,8 @@ inductive Counter where
   | hcompPath
   | hcompHIT
   | hcompData
+  /-- `hcompData` past the closed shortcut, with no side forced -/
+  | hcompDataClosed
   | hcompGlue
   | hcompHU
   | hcompU
@@ -49,7 +51,7 @@ inductive Counter where
   deriving Repr, Inhabited
 
 def Counter.all : List Counter :=
-  [.hcomp, .hcompSigma, .hcompPath, .hcompHIT, .hcompData, .hcompGlue, .hcompHU, .hcompU, .hcompStuck,
+  [.hcomp, .hcompSigma, .hcompPath, .hcompHIT, .hcompData, .hcompDataClosed, .hcompGlue, .hcompHU, .hcompU, .hcompStuck,
    .transp, .transpSigma, .transpPath, .transpStuck, .transpGlue, .transpHU, .lemEq, .splitHcomp,
    .act, .actNodes, .subs, .lazies, .lazyBodies, .cacheds, .lines, .bodies, .insts, .maxLevel]
 
@@ -59,6 +61,7 @@ def Counter.name : Counter → String
   | .hcompPath => "hcomp Path"
   | .hcompHIT => "hcomp HIT"
   | .hcompData => "hcomp data"
+  | .hcompDataClosed => "hcomp data closed"
   | .hcompGlue => "hcomp Glue"
   | .hcompHU => "hcomp hcompU"
   | .hcompU => "hcomp U"

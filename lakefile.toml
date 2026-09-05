@@ -8,7 +8,7 @@ testDriverArgs = [
   "examples/ElabZoo.ktt", "examples/Prelude.ktt", "examples/Cubical.ktt",
   "examples/Brunerie.ktt", "examples/HLevel.ktt", "examples/S1Mod2.ktt",
   "examples/Tubes.ktt", "examples/LocalGlobal.ktt", "examples/S2Mod2.ktt",
-  "examples/J2S2.ktt",
+  "examples/J2S2.ktt", "examples/Winding.ktt",
 ]
 
 [[lean_lib]]

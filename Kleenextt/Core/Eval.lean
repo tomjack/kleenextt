@@ -90,6 +90,11 @@ def levelSet (ls : List Nat) : Nat :=
 def clearLevel (vs l : Nat) : Nat :=
   if vs.testBit l then vs - (1 <<< l) else vs
 
+/-- Above every level, set in the support of a value mentioning a fibrant
+variable or a metavariable. Without it a value is closed in cctt's sense
+(free interval variables allowed), so canonicity applies to it. -/
+def openBit : Nat := 1 <<< 62
+
 /-- The levels a value with support `vs` may mention after `σ`. -/
 def Subst.varsUnder (σ : Subst) (vs : Nat) : Nat :=
   σ.foldl (init := σ.foldl (fun acc (l, _) => clearLevel acc l) vs) fun acc (l, r) =>
@@ -374,8 +379,9 @@ mutual
       | .mk env _ => env.foldl (· ||| go ·) 0
     let goSys (sys : System Val) : Nat := sys.foldl (fun acc (α, u) => acc ||| levelSet (α.map (·.1)) ||| go u) 0
     match v with
-    | .var _ | .univ | .interval => 0
-    | .flex _ sp => sp.foldl (· ||| go ·.1) 0
+    | .univ | .interval => 0
+    | .var _ => openBit
+    | .flex _ sp => sp.foldl (· ||| go ·.1) openBit
     | .lam _ _ c | .ilam _ c => goClo c
     | .line _ _ vs | .sub _ _ _ vs _ | .lazy vs _ | .cached vs _ => vs
     | .glued _ sp _ => sp.foldl (· ||| go ·.1) 0
@@ -685,18 +691,22 @@ mutual
       | _ => cache (.split P env cases x)
     | _ => cache (.split P env cases x)
 
-  /-- Constructor-wise when the base and every side share a constructor. -/
+  /-- Constructor-wise when the base and every side share a constructor.
+  Closed, the sides share the base's constructor by canonicity and are not
+  forced here: each field projects them lazily (cctt's closed `hcom`). -/
   partial def hcompData (L : Nat) (κ : Face) (A : Val) (sys : System Val) (u : Val) : Val :=
     match frc L κ u with
     | .prim c args =>
       match G.con? c with
       | some (_, con) =>
-        let sameCon := System.under κ sys |>.all fun (_, κα, s) =>
+        let closed := (sys.foldl (fun acc (_, s) => acc ||| s.vars) u.vars) &&& openBit == 0
+        let sameCon := closed || (System.under κ sys |>.all fun (_, κα, s) =>
           match frc (L + 1) κα (lineApp (L + 1) κα s (.var L)) with
           | .prim c' args' => c' == c && args'.length == args.length
-          | _ => false
+          | _ => false)
         if args.length != con.fields.length || !sameCon then .hcomp A sys u
-        else cache (.prim c (hcompFields L κ 0 con.fields [] sys args))
+        else (if closed then tick .hcompDataClosed else id) <|
+          cache (.prim c (hcompFields L κ 0 con.fields [] sys args))
       | none => cache (.hcomp A sys u)
     | _ => cache (.hcomp A sys u)
 
