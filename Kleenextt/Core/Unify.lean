@@ -119,7 +119,6 @@ mutual
     | .pi _ i a c, .pi _ i' a' c' =>
       if i != i' then throw "unify: implicitness mismatch"
       unify l a a'
-      let G ← get
       let fresh := match a with
         | .interval => Val.i (.var l)
         | _ => .var l

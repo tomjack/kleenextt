@@ -509,7 +509,6 @@ mutual
         let G ← get
         let cxtδ := cxtj.restrict G δ
         let t' ← check cxtδ t (face G cxtj.lvl [] δ ty)
-        let G ← get
         vsys := vsys ++ [(δ, .ilam j (.mk cxtδ.env.tail t'))]
         entries := entries ++ [(φ, t')]
     checkCompatible cxt true vsys
