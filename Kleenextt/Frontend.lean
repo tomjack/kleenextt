@@ -1,17 +1,14 @@
 import Lean
 import Kleenextt.Core.Check
 
-/-! Lean as the surface language: object-level programs are written directly in
-Lean files through the `kexpr` syntax category, and the `kdef`/`kdata`/`#knf`/
-`#ktype`/`#kconv`/`#kdiffer`/`#kfail` commands run the Kleenextt elaborator at
-elaboration time, so object-level type errors surface as ordinary Lean errors.
-`#ktime e` normalises `e`, reporting the time of evaluation and of quotation,
-the counters of `Core/Stats.lean` and the start of the normal form.
-Only existing Lean tokens are used, so the grammar reserves nothing new at the
-term level; the cubical primitives are ordinary identifiers that `toRaw`
-recognises at the head of an application. System faces are conjunctions of
-`(i = 0)`/`(i = 1)` on variables, written by juxtaposition as in cubicaltt;
-no other cofibrations can be written. -/
+/-! Lean as the surface language: object-level programs are written in Lean
+files through the `kexpr` syntax category, and the `kdef`/`kdata`/`#knf`/
+`#ktype`/`#kconv`/`#kdiffer`/`#kfail` commands run the Kleenextt elaborator
+at elaboration time, so object-level type errors are ordinary Lean errors.
+Only existing Lean tokens are used; the cubical primitives are identifiers
+that `toRaw` recognises at the head of an application. Faces are
+conjunctions of `(i = 0)`/`(i = 1)` on variables, by juxtaposition as in
+cubicaltt; no other cofibrations can be written. -/
 
 namespace Kleenextt.Frontend
 
@@ -163,13 +160,12 @@ private def special (name : String) (args : List Raw) : Except String (Option Ra
     match r with
     | .lam i .expl a => pure (i, a)
     | _ => throw s!"{name}: expected λ i => A"
-  -- `coe r r' (λ i => A) u` and `hcom r r' A (λ l => […]) u` are the Cartesian
-  -- operations, expressed with connections: the direction `r → r'` is the
-  -- interpolation `l ↦ (¬l ∧ r) ∨ (l ∧ r') ∨ (r ∧ r')`, whose last disjunct
-  -- makes it constantly `r` when `r = r'`. The Cartesian law `r = r' ⇒ u₀`
-  -- is the face `(r = r')`, expressible only when one endpoint is a constant:
-  -- it is `coe`'s constancy cofibration and an extra side of `hcom`. With two
-  -- variable endpoints `hcom k k` does not reduce to its base.
+  -- `coe r r' (λ i => A) u` and `hcom r r' A (λ l => […]) u`, the Cartesian
+  -- operations, by connections: the direction `r → r'` is
+  -- `l ↦ (¬l ∧ r) ∨ (l ∧ r') ∨ (r ∧ r')`, constantly `r` when `r = r'`. The
+  -- law `r = r' ⇒ u₀` is the face `(r = r')`, expressible only when one
+  -- endpoint is a constant: `coe`'s constancy cofibration and an extra side
+  -- of `hcom`. With two variable endpoints `hcom k k` does not reduce.
   let dir (r r' l : Raw) : Raw := .ijoin (.ijoin (.imeet (.ineg l) r) (.imeet l r')) (.imeet r r')
   let eqCof (r r' : Raw) : Option Raw :=
     match r, r' with
@@ -387,11 +383,10 @@ elab tk:"#ktime " e:kexpr : command => do
   let shown := if n.length > 200 then String.ofList (n.toList.take 200) ++ "…" else n
   logInfoAt tk m!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {shown}"
 
-/-- `#ktime` on a task, printing the counters and the resident set size to
-stderr every two seconds until it finishes: a growth curve that survives
-running out of memory. The elaborator buffers the standard streams into
-the message log, so the samples go through a fresh handle on the
-process's stderr, or on the file named by `KTIME_LOG`. -/
+/-- `#ktime`, also printing the counters and resident set size every two
+seconds: a growth curve that survives running out of memory. The elaborator
+captures the standard streams, so the samples go through a fresh handle on
+the process's stderr, or on the file named by `KTIME_LOG`. -/
 elab tk:"#ktrace " e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String (Tm × Globals) := do

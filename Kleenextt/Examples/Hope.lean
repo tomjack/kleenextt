@@ -17,10 +17,9 @@ kdef squareConnAnd : (A : Type) (x : A) (p : Ω2 A x)
   → PathP (λ i => PathP (λ j => Path A x (p i j)) refl (λ k => p i k)) refl refl :=
   λ A x p i j k => p i (j ∧ k)
 
--- The symmetric Eckmann-Hilton of tomjack/cubical `Stuff/BrunerieCobordism.agda`,
--- a tube over `x` with `erp f x y = (¬f ∧ x) ∨ (f ∧ y) ∨ (x ∧ y)` unfolded;
--- it extends to the higher coherences (syllepsis). cctt's `EH`, with base
--- `p i k`, costs the same on `generator`.
+-- The symmetric Eckmann-Hilton of tomjack/cubical `Stuff/BrunerieCobordism.agda`
+-- with `erp f x y = (¬f ∧ x) ∨ (f ∧ y) ∨ (x ∧ y)` unfolded; cctt's `EH`,
+-- with base `p i k`, costs the same on `generator`.
 kdef EH : (A : Type) (x : A) (p q : Ω2 A x) → PathP (λ i => Path (Path A x x) (p i) (p i)) q q :=
   λ A x p q i j k => hcomp A (λ f => [ (i = 0) ↦ q j (f ∧ k), (i = 1) ↦ q j (f ∧ k), (k = 1) ↦ q j f,
                                        (j = 0) ↦ p i (¬ f ∨ k), (j = 1) ↦ p i (¬ f ∨ k), (k = 0) ↦ p i (¬ f) ]) x

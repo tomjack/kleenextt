@@ -2,28 +2,28 @@ import Lean
 
 /-! Derived closure defunctionalization.
 
-A `defun` block wraps the declaration of a semantic domain and the mutual
-block of rules over it. Closures are written naively at their use sites,
-as `closure% fun x y => body`; the block is elaborated twice:
+A `defun` block wraps a semantic domain and the mutual block of rules over
+it. Closures are written at their use sites as `closure% fun x y => body`;
+the block is elaborated twice:
 
-1. Against an `unsafe` higher-order-function version of the closure type.
-   Each site is wrapped in a `site` marker, and the elaborated definitions
-   are traversed to find, per site, the local variables its body captures,
-   with their types. Everything declared in this pass is discarded.
-2. For real: the closure type becomes an inductive with one constructor per
-   site whose fields are the captured locals; each site becomes that
-   constructor applied to the locals; `apply` re-elaborates each site's
-   lambda in the arm for its constructor; and each `deriving` clause of the
-   header produces a function mapping a class method over the fields.
+1. Against an `unsafe` function-valued closure type, each site wrapped in a
+   `site` marker; the elaborated definitions are traversed to record, per
+   site, the locals its body captures with their types. Everything declared
+   in this pass is discarded.
+2. For real: the closure type is an inductive with one constructor per
+   site, its fields the captured locals; each site becomes its constructor
+   applied to the locals; `apply` re-elaborates each site's lambda in the
+   arm for its constructor; each `deriving` clause produces a function
+   mapping a class method over the fields.
 
 `defun C (x : A) (y : B) : V deriving f (p : P) via K.m := impl … in cmds
-end defun` declares `C` with `C.apply : C → A → B → V`, and `C.f : P → C →
-C` applying `K.m p` to every field, with `⟨impl⟩ : K V` as a local instance
-for the fields of type `V`; a clause `deriving f (p : P) : T folding op e
-via K.m := impl` instead folds the fields' `K.m p` values with `op` from
-`e`. `cmds` must contain the inductive `V` (in a `mutual` block or alone,
-with a nullary constructor) and, after it, the `mutual` block holding the
-sites; section variables are not captured. -/
+end defun` declares `C.apply : C → A → B → V` and `C.f : P → C → C`
+applying `K.m p` to every field, with `⟨impl⟩ : K V` a local instance for
+fields of type `V`; `deriving f (p : P) : T folding op e via K.m := impl`
+instead folds the fields' `K.m p` values with `op` from `e`. `cmds` must
+declare the inductive `V` (alone or in a `mutual` block, with a nullary
+constructor) and, after it, the `mutual` block holding the sites. Section
+variables are not captured. -/
 
 open Lean Elab Command Term Meta Parser
 open Lean.Parser.Term (bracketedBinderF matchAltExpr)
@@ -158,9 +158,8 @@ def analyze (old : Environment) (sectionVars : NameSet) (val : Ident) : CommandE
             if sectionVars.contains d.userName then continue
             if fields.any (·.1 == d.userName) then
               throwError "defun: two captured locals named `{d.userName}` at site {id}"
-            -- Abbreviations over the domain may be declared after the
-            -- inductive block, and nested occurrences of the domain must be
-            -- spelled as in its own constructors.
+            -- Unfold abbreviations mentioning the domain: they may be
+            -- declared after the inductive block.
             let ty ← Meta.transform (← instantiateMVars d.type) (pre := fun e => do
               let e' ← whnfR e
               return if e' == e || (e'.find? (·.isConstOf valName)).isNone then .continue else .visit e')

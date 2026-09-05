@@ -55,10 +55,8 @@ kdef surfs : (x : S2m2) → Ω2 S2m2 x := λ x => case x (λ x => Ω2 S2m2 x)
 
 #kconv (λ (a b : I) => surfs sbase a b) = (λ a b => surf a b)
 
--- `thingy`: at every point, the surface equals its flip (`THINGY-base`,
--- `THINGY-surf`, `THINGY-mod2`, `thingy'`); the 5- and 6-cubes are above
--- the level of `S2m2`, and the truncation case fills a 4-cube in a
--- proposition.
+-- `thingy`: at every point the surface equals its flip (`THINGY-base`,
+-- `THINGY-surf`, `THINGY-mod2`, `thingy'`).
 kdef thingyBase : Path (Ω2 S2m2 sbase) (λ a b => surf b a) (λ a b => surf a b) := λ t a b => smod2 (¬ t) a b
 kdef thingySurf : PathP (λ i => PathP (λ j => Path (Ω2 S2m2 (surf i j)) (λ a b => surfsLemma1 i j b a) (surfsLemma1 i j))
                           thingyBase thingyBase) refl refl :=

@@ -4,46 +4,41 @@ import Kleenextt.Core.Stats
 
 /-! Cubical NbE in the style of cubicaltt, on de Bruijn levels.
 
-`transp` and `hcomp` are the primitives (the CHM decomposition), with
-`comp`, `hfill` and `ghcomp` derived. Type formers: Pi (also over `I`),
-Sigma, `PathP`, `Glue`, the universe, and user-declared parameterless
-inductive types and HITs (`kdata`, with `case` as the dependent eliminator,
-computing on `hcomp` by the CHM rule). `transp` for `Glue` follows Cubical
-Agda and Huber, with `ghcomp` in the `∀i.φ` correction so no empty systems
-arise. `hcomp` in the universe is a type former of its own (cubicaltt's
-`VCompU`): its elements are `glueU`, the implicit equivalence is transport
-backwards along the side line, and `lemEq` supplies the fiber contraction,
-so no equivalence proof is ever built. Equivalences are contractible-fiber:
-`Equiv`, `isEquiv`, `fiber` and `isContr` are primitives unfolding to closed
-templates.
+`transp` and `hcomp` are the primitives (the CHM decomposition); `comp`,
+`hfill` and `ghcomp` are derived. Type formers: Pi (also over `I`), Sigma,
+`PathP`, `Glue`, the universe, and user-declared parameterless inductive
+types and HITs (`case` is the dependent eliminator, computing on `hcomp` by
+the CHM rule). `transp` for `Glue` follows Cubical Agda and Huber, with
+`ghcomp` in the `∀i.φ` correction so no empty systems arise. `hcomp` in the
+universe is a type former of its own (cubicaltt's `VCompU`): its elements
+are `glueU`, the implicit equivalence is transport backwards along the side
+line, and `lemEq` supplies the fiber contraction. Equivalences are
+contractible-fiber; `Equiv`, `isEquiv`, `fiber` and `isContr` are
+primitives unfolding to closed templates.
 
 Interval variables share the level space with ordinary variables. A value
-lives in a context of some size `L`, mentions only levels below `L`, and may
-be used in any larger context. Semantic interval binders (`line`) are
-written at their use sites as closures derived by `Defun.lean`, which give
-the line its body, computed at most once at a fresh variable, and its
-support, from the captured values. Interval substitution (`act`) is
-skipped outside the support and otherwise deferred (`sub`), as in cctt:
-exposing the head of a value (`whnf`) pushes a pending substitution one
-layer, re-running the computation rules on a neutral head, since
-substitution can unblock them, and deferring the children. The components
-a rule builds for the faces of a `Glue` or a universe composition, and the
-components of pairs and constructors under `transp` and `hcomp`, are
-deferred computations (`lazy`, with the support of their captures), since
-a total face discards all but one of them.
+in a context of size `L` mentions only levels below `L` and may be used in
+any larger context. Semantic interval binders (`line`) are written at their
+use sites as closures derived by `Defun.lean`, which give the line its body,
+computed at most once at a fresh variable, and its support, from the
+captures. Interval substitution (`act`) is skipped outside the support and
+otherwise deferred (`sub`), as in cctt: `whnf` pushes a pending substitution
+one layer, re-running the computation rules on the head and deferring the
+children. The components a rule builds for the faces of a `Glue` or a
+universe composition, and those of pairs and constructors under `transp`
+and `hcomp`, are `lazy`, since a total face discards all but one of them.
 
-Evaluation is glued: a top-level definition stays a head (`glued`) with
-its spine and its unfolding, so that conversion and the readback of a
-metavariable solution can compare or quote the spine and unfold only when
-that fails. Every computation rule sees through it (`whnf`, `frc`).
+Evaluation is glued: a top-level definition stays a head (`glued`) with its
+spine and its unfolding; conversion and readback compare or quote the spine
+first and unfold only when that fails. Every computation rule sees through
+it (`whnf`, `frc`).
 
-Every semantic operation takes the current context size `L`, which is the
-fresh-level supply, and the current cofibration `κ`, a face: the equations
-`i = 0`/`i = 1` assumed where the operation runs, cctt's `?cof`. A value is
-never restricted to a face as an operation; a head is inspected under `κ`
-(`frc`), which applies `κ` at the head only, and the work for a face `γ` of
-a system runs under `κ ∧ γ`. A value built under `κ` is only ever inspected
-under a cofibration entailing `κ`, so faces are kept relative to `κ`. -/
+Every semantic operation takes the context size `L`, the fresh-level
+supply, and the current cofibration `κ`, a face (cctt's `?cof`). A value is
+never restricted as an operation: a head is inspected under `κ` (`frc`),
+which applies `κ` at the head only, and the work for a face `γ` of a system
+runs under `κ ∧ γ`. A value built under `κ` is only inspected under a
+cofibration entailing `κ`, so faces are kept relative to `κ`. -/
 
 namespace Kleenextt.Core
 
@@ -132,10 +127,9 @@ def Subst.varsUnder (σ : Subst) (vs : Nat) : Nat :=
 abbrev Vars.none : Vars α := ⟨fun _ => 0⟩
 
 instance : Vars IExpr := ⟨fun r => levelSet r.vars⟩
-/-- A face reaches a closure only as its cofibration, which is not part of
-the support: a value mentions the generators `κ` fixes only through its
-faces and interval expressions. System faces are counted by the pair
-instance below. -/
+/-- A captured face is a cofibration in scope, not part of the support:
+otherwise every line built under it would look as if it mentioned its
+generators. System faces are counted by the pair instance below. -/
 instance : Vars Face := .none
 instance [Vars α] [Vars β] : Vars (α × β) := ⟨fun (a, b) => Vars.vars a ||| Vars.vars b⟩
 instance [Vars α] : Vars (List α) := ⟨fun xs => xs.foldl (· ||| Vars.vars ·) 0⟩
@@ -569,9 +563,8 @@ mutual
       | none => panic! s!"eval: unknown definition {n}"
     | .split P cases x => splitApp L κ (eval L κ env P) env cases (eval L κ env x)
     | .extend n a h sys vars =>
-      -- The cube variables are peeked at fresh levels, where the faces are
-      -- the cube's; the construction is made there and the actual interval
-      -- expressions substituted, so that it is stable under connections.
+      -- Built at fresh levels and then substituted, so the result is stable
+      -- under connections.
       let m := vars.length
       let ks := (List.range m).zip vars
       let σ : Subst := ks.map fun (k, idx) => (L + k, evalI env (.var idx))
@@ -591,10 +584,10 @@ mutual
       (invFormula (κ.apply (evalI env φ)) true).map fun δ =>
         (δ, eval L (κ.conj δ) (env.map (act L κ δ.toSubst)) t)
 
-  /-- Interval substitution. `L` is the size of the target context. A value
-  outside the support of `σ` is returned as is; interval values and lines
-  are substituted at once, cheaply; anything else is deferred, composing
-  with a substitution already pending. -/
+  /-- Interval substitution into a context of size `L`. A value outside the
+  support of `σ` is returned as is; interval values and lines are
+  substituted at once; anything else is deferred, composing with a pending
+  substitution. -/
   partial def act (L : Nat) (κ : Face) (σ : Subst) (v : Val) : Val :=
     if σ.isEmpty then v else
     tick .act <|
@@ -650,19 +643,18 @@ mutual
   partial def actSys (L : Nat) (κ : Face) (σ : Subst) (sys : System Val) : System Val :=
     System.act (act L κ) κ σ sys
 
-  /-- Substitute the endpoints a face assigns: to instantiate a peeked
-  variable, and to pre-restrict what a face scope captures, once, so that
-  the inspections under `κ ∧ α` find nothing left to substitute. Only `κ`
-  is relied on for the restriction itself. -/
+  /-- Substitute the endpoints `α` assigns: to instantiate a peeked
+  variable, and to pre-restrict what a face scope captures once, so that
+  inspections under `κ ∧ α` find nothing left to substitute. Only `κ`
+  guarantees the restriction. -/
   partial def face (L : Nat) (κ : Face) (α : Face) (v : Val) : Val :=
     act L κ α.toSubst v
 
   partial def faceSys (L : Nat) (κ : Face) (α : Face) (sys : System Val) : System Val :=
     actSys L κ α.toSubst sys
 
-  /-- The faces of a system with the cofibration for each, `κ ∧ α`, and the
-  component substituted along `α` once, so that the inspections under
-  `κ ∧ α` share it instead of each restricting it again. -/
+  /-- Each face `α` with `κ ∧ α` and its component pre-restricted along
+  `α`, shared by every inspection under `κ ∧ α`. -/
   partial def sysUnder (L : Nat) (κ : Face) (sys : System Val) : List (Face × Face × Val) :=
     System.under κ sys |>.map fun (α, κα, s) => (α, κα, face L κ α s)
 
@@ -958,11 +950,8 @@ mutual
       hcomp' L κ (c.apply L κ u) (mkSystem κ sides) (vApp L κ f u i)
     | _ => cache (.app (cache (.hcomp A sys f)) u i)
 
-  -- Composition in the universe: `hcomp Type [φ ↦ E] A` is a type former
-  -- (cubicaltt's `VCompU`). Its elements are `glueU [φ ↦ E] [φ ↦ t] a` with
-  -- `a : A` and `t : E 1` such that `a` is the transport of `t` backwards
-  -- along `E`; that transport is the implicit equivalence `E 1 → A`, and
-  -- `lemEq` provides the contractibility of its fibers semantically.
+  -- Composition in the universe, cubicaltt's `VCompU`: `glueU [φ ↦ E] [φ ↦ t] a`
+  -- with `t : E 1`, `a : A`, and `a` the backward transport of `t` along `E`.
 
   partial def hcompU' (L : Nat) (κ : Face) (A : Val) (sys : System Val) : Val :=
     let sys := System.restrict κ sys
@@ -1113,14 +1102,12 @@ mutual
       ++ (invFormula (κ.apply θ.cof) false).map (fun β => (β, constLine L (face L κ β c)))
     hcomp' L κ X (mkSystem κ sides) c
 
-  /-- Fill the cube over the variables the faces of `sys` mention in the
-  type `A`, constant over them, given `h : isOfHLevel n A`, with `n` the
-  dimension (kangrongji's `extend`). The last variable is peeled off: the
-  remaining faces become lines in it, and an `(n-1)`-cube is filled in the
-  path type between the two faces on it, of h-level `n - 1` by `h`; a
-  proposition fills a line by `h x₀ x₁`, whose endpoints are the faces
-  since the boundary is the whole one, and a contractible type fills by
-  `ext`. -/
+  /-- Fill the cube over the variables the faces of `sys` mention, in the
+  type `A` of h-level `n` by `h` (kangrongji's `extend`): peel the last
+  variable and fill an `(n-1)`-cube in the path type between its two faces,
+  of h-level `n - 1` by `h`. A proposition fills a line by `h x₀ x₁`, whose
+  endpoints are the faces since the boundary is total; a contractible type
+  fills by `ext`. -/
   partial def extend' (L : Nat) (κ : Face) (n : Nat) (A h : Val) (sys : System Val) : Val :=
     let sys := System.restrict κ sys
     match sys.total? with
@@ -1134,9 +1121,8 @@ mutual
     | some l, 1 =>
       let x0 := (sys.find? (·.1 == [(l, false)])).map (·.2) |>.getD (panic! "hlevel: missing face")
       if ls.length > 1 then
-        -- A cube of dimension above the level in a proposition: one
-        -- composition from a corner, with `h` joining the corner to each
-        -- face.
+        -- Above the level in a proposition: one composition from a corner,
+        -- `h` joining the corner to each face.
         let c := act L κ (ls.map fun l' => (l', IExpr.zero)) x0
         let sides := sysUnder L κ sys |>.map fun (α, κα, w) =>
           let hα := face L κ α h
@@ -1144,9 +1130,9 @@ mutual
         hcomp' L κ A (mkSystem κ sides) c
       else
       let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
-      -- The line `h x₀ x₁`; over a family, `h` at the point applied to the
-      -- two endpoints transported there along connections, which at the
-      -- ends are transports with `r = 1`, so no correction is needed.
+      -- Over a family, `h` at the point is applied to the endpoints
+      -- transported there; at the ends those transports have `r = 1`, so
+      -- no correction is needed.
       if (Val.vars A).testBit l then
         let Al := Val.line l (Thunk.pure A) (clearLevel (Val.vars A) l)
         let f0 := lineApp L κ (transpFill L κ Al .zero x0) (.var l)
@@ -1160,9 +1146,9 @@ mutual
         if α.mentions l then none else some (α, Val.line l (Thunk.pure w) (clearLevel (Val.vars w) l))
       let (P, h') :=
         if (Val.vars A).testBit l then
-          -- `PathP (λ l. A) x₀ x₁` is a path in `A 1` from `transp A x₀`, along
-          -- `t ↦ PathP (λ j. A (t ∨ j)) (transpFill A x₀ t) x₁` (`fromPathPPath`);
-          -- its h-level is `h 1 (transp A x₀) x₁` transported back.
+          -- `PathP (λ l. A) x₀ x₁` is `Path (A 1) (transp A x₀) x₁` along
+          -- `t ↦ PathP (λ j. A (t ∨ j)) (transpFill A x₀ t) x₁`; its h-level
+          -- is `h 1 (transp A x₀) x₁` transported back.
           let Al := Val.line l (Thunk.pure A) (clearLevel (Val.vars A) l)
           let fill := transpFill L κ Al .zero x0
           let hx := vApp L κ (vApp L κ (face L κ [(l, true)] h) (lineApp L κ fill .one) .expl) x1 .expl

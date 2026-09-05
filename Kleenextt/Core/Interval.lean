@@ -1,12 +1,11 @@
 /-! The interval theory. The equational theory of the free Kleene (and free
 De Morgan) interval is decided by evaluation into the finite algebra
 generating the variety; `Tests.lean` pins the expected (in)equations at
-compile time. The kernel uses the Kleene theory for conversion of interval
-expressions. System faces are conjunctions of `(i = 0)`/`(i = 1)` on
-variables, as in cubicaltt; a cofibration is represented by its face normal
-form (cubicaltt's `invFormula`), which is the same for the Kleene and De
-Morgan intervals. ABCFHL validity (`isValid`) is available but not enforced
-(see NOTES.md). -/
+compile time. The kernel converts interval expressions in the Kleene
+theory. Faces are conjunctions of `(i = 0)`/`(i = 1)` on variables, as in
+cubicaltt; a cofibration is its face normal form (cubicaltt's
+`invFormula`), the same for both intervals. ABCFHL validity (`isValid`) is
+available but not enforced (NOTES.md). -/
 
 namespace Kleenextt.Core
 

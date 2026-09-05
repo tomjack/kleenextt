@@ -231,8 +231,8 @@ mutual
         boundary := (cxt.lvl + 1, [(cxt.lvl, false)], x0) :: (cxt.lvl + 1, [(cxt.lvl, true)], x1) :: cxt.boundary }
       let t ← check cxt' t (lineApp G cxt'.lvl [] A (.var cxt.lvl))
       let G ← get
-      -- The endpoints are evaluated in the restricted context rather than
-      -- restricted after evaluation: the open value can be far larger.
+      -- Evaluated in the restricted context, not restricted afterwards: the
+      -- open value can be far larger.
       let at0 := eval G cxt'.lvl [] (cxt'.restrict G [(cxt.lvl, false)]).env t
       let at1 := eval G cxt'.lvl [] (cxt'.restrict G [(cxt.lvl, true)]).env t
       try unify cxt.lvl at0 x0; unify cxt.lvl at1 x1
@@ -250,8 +250,6 @@ mutual
       let u ← check (cxt.define x vt va) u a'
       return .letE x a t u
     | .hlevel n h, a =>
-      -- The boundary the enclosing path binders ask for, brought to the
-      -- current context by applying the later binders.
       let entries := cxt.boundaryNow G
       let ls := ((entries.map fun (α, _) => α.map (·.1)).flatten.eraseDups.toArray.qsort (· < ·)).toList
       let m := ls.length
@@ -259,9 +257,8 @@ mutual
         throw s!"hlevel: {m} cube variables but level {n}"
       let hty := vApp G cxt.lvl [] (eval G 0 [] [] (isOfHLevelTm n)) a .expl
       let h ← check cxt h hty
-      -- A cube of dimension above the level: over a constant type the
-      -- construction fills it directly, over a family `h` is weakened up
-      -- to it.
+      -- Above the level: a constant type is filled directly, over a family
+      -- `h` is weakened up to the dimension.
       let aTm := quote G cxt.lvl a
       let dependent := ls.any fun l => (Val.vars G a).testBit l
       let h := if dependent then
@@ -434,8 +431,8 @@ mutual
           c := c.bind name .interval
         let G ← get
         let conEnv := args.reverse
-        -- The boundary the case must respect, through the cases so far, is
-        -- what `hlevel` in the body fills towards.
+        -- The boundary the case must respect, which `hlevel` in the body
+        -- fills towards.
         let faces := con.boundary.flatMap fun (φ, e) =>
           (invFormula (evalI conEnv φ) true).map fun δ =>
             (c.lvl, δ, splitApp G c.lvl [] (face G c.lvl [] δ vP) (cxt.env.map (face G c.lvl [] δ)) cases'

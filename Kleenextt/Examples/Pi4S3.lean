@@ -1,13 +1,13 @@
 import Kleenextt.Examples.J2S2
 
 /-! `π₄(S³)` is nontrivial: the Hopf generator `η loop3` of `Ω⁴S³` is not
-`refl`. The invariant is `bit` composed with `Ω⁴S³ → Ω³J₂S²`, transport
-along the 3-cube of types over `loop3` that rotates `J₂S²` by its
-surfaces (cctt's `hope`, without its cheats): `J₂S²` carries its
-4-truncation as a constructor, so its surfaces over `surf₂` are one
-`hlevel`, and the family over it lands in the 2-groupoids. Not part of
-the default build: `lake build Kleenextt.Examples.Pi4S3` computes the invariant
-on the generator in 250 s and 11 GB (3.9M `hcomp`s), to `true`. -/
+`refl`. The invariant is `bit` after `Ω⁴S³ → Ω³J₂S²`, transport along the
+3-cube of types over `loop3` rotating `J₂S²` by its surfaces (cctt's `hope`
+without its cheats): `J₂S²` carries its 4-truncation as a constructor, so
+its surfaces over `surf₂` are one `hlevel`, and the family lands in the
+2-groupoids. Not in the default build: `lake build Kleenextt.Examples.Pi4S3`
+computes the invariant on the generator to `true` in 250 s and 11 GB
+(3.9M `hcomp`s). -/
 
 namespace Kleenextt.Examples.Pi4S3
 
