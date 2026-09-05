@@ -26,11 +26,13 @@ Cubical Agda, ABCFHL validity is not enforced on user systems
 vanish. Enforcing it would reject `hcomp [ (i=0) ↦ u ] u₀`.
 
 Right-nested composition: `examples/Winding.ktt` winds a thousand loops in
-0.14 s as `((refl ∙ loop) ∙ …) ∙ loop` and 0.67 s as `loop ∙ (… ∙ refl)`,
-a hundred in 11 ms and 17 ms. Each loop's `(i = 1)` side is a line created
-inside the previous side's body, so the levels reach 1002 (`max level`)
-and the support bitmasks are boxed; cctt winds a million in 8.9 s either
-way with an interval scope of 15.
+0.09 s as `((refl ∙ loop) ∙ …) ∙ loop` and 0.46 s as `loop ∙ (… ∙ refl)`,
+a hundred in 8 ms and 11 ms. Each loop's `(i = 1)` side is a line created
+inside the previous side's body, and a body is memoised at its creation
+level, so the bodies reach level 1002 (`max level`) and their support
+bitmasks are boxed; cctt winds a million in 8.9 s either way with an
+interval scope of 15. Evaluating a body at the level of its use instead
+would need the closure kept beside the memoised body.
 
 Parallelism: the evaluator is pure and `Globals` read-only, so fork-join
 with `Task.spawn` is deterministic. Candidates: the sides of a system in
@@ -89,7 +91,11 @@ Since the captures mention none of the other variables, `mkLine` and
 and `frc` takes only the equations on the value's support: the sides of a
 nested composition are otherwise evaluated under every enclosing face, a
 cofibration of a thousand equations for a thousand right-nested loops
-(`max face`), 4.5 s where pruning gives 0.67 s.
+(`max face`), 4.5 s where pruning gives 0.67 s. Likewise a deferred
+substitution is pushed at the context size its free support needs
+(`levelBound`), not the size the value was created at: the support is a
+thinning, and a body memoised under peeked variables was otherwise pushed
+one level deeper per nesting (BrunerieBench 32 s to 22 s).
 That took `brunerieW` from 13 minutes and 21 GB to 32 s and 2.7 GB, and
 made the off-face garbage the old rules could produce (a fibre built from
 a type not restricted to its face) unwritable; `splitApp`, `unglueU'` and
@@ -122,5 +128,5 @@ rather than off the goal, and truncations as HIT constructors.
 `examples/J2S2.ktt`: the cheat-free `bit` of tomjack/cubical
 `Stuff/Pi3JS2` is `true` in 5.5 s, where Agda's `canon` reports "not ok!".
 `examples/Pi4S3.ktt`: `π₄(S³)` is nontrivial, cctt's `hope` without its
-cheats; `π4S3Nontrivial` in 234 s and 7.4 GB, the file with its imports
-in 390 s (`KDEF_TIME`).
+cheats; `π4S3Nontrivial` in 167 s and 7.4 GB, the file with its imports
+in 267 s (`KDEF_TIME`).

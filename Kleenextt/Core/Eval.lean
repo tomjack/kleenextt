@@ -104,6 +104,10 @@ metavariable. Without it a value is closed in cctt's sense (free interval
 variables allowed), so canonicity applies to it. -/
 def openBit : Nat := 1
 
+/-- The context size a support needs: one above its highest level. -/
+def levelBound (vs : Nat) : Nat :=
+  if vs < 2 then 0 else vs.log2
+
 /-- The levels a value with support `vs` may mention after `σ`. -/
 def Subst.varsUnder (σ : Subst) (vs : Nat) : Nat :=
   σ.foldl (init := σ.foldl (fun acc (l, _) => clearLevel acc l) vs) fun acc (l, r) =>
@@ -575,7 +579,10 @@ mutual
     tick .act <|
     match v with
     | .i r => .i (σ.apply r)
-    | .sub L' τ w _ _ => act (max L L') κ (σ.comp τ) w
+    -- At the size the free support needs, not the size the value was
+    -- created at: a body memoised under peeked variables is otherwise
+    -- instantiated one level deeper per nesting.
+    | .sub _ τ w vs _ => act (max L (levelBound vs)) κ (σ.comp τ) w
     | v =>
       let vs := v.vars
       if vs &&& σ.domain == 0 then v else
