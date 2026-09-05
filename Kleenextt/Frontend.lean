@@ -291,7 +291,7 @@ private def elabDef (st : KState) (x : Ident) (a t : TSyntax `kexpr) : IO KState
     pure (← zonk G cxt.env cxt.lvl ty, ← zonk G cxt.env cxt.lvl tm)
   -- `KDEF_TRACE`: as `#trace`.
   let r ← if (← IO.getEnv "KDEF_TRACE").isNone then pure (r ()) else do
-    let err ← IO.FS.Handle.mk ((← IO.getEnv "KTIME_LOG").getD "/dev/stderr") .append
+    let err ← IO.FS.Handle.mk ((← IO.getEnv "KTRACE_LOG").getD "/dev/stderr") .append
     Stats.reset
     let t0 ← IO.monoMsNow
     let task ← IO.asTask (prio := .dedicated) (IO.lazyPure fun _ => r ())
@@ -361,13 +361,13 @@ private def time (st : KState) (e : TSyntax `kexpr) : IO String := do
   let s ← Stats.read
   pure s!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {truncate 200 n}"
 
-/-- `#time`, sampling counters and resident size every two seconds through
-a fresh stderr handle (or `KTIME_LOG`), since the elaborator captures the
-standard streams. -/
+/-- `#trace`: `#time`, sampling counters and resident size every two seconds
+through a fresh stderr handle (or `KTRACE_LOG`), since the elaborator
+captures the standard streams. -/
 private def trace (st : KState) (e : TSyntax `kexpr) : IO String := do
   let (cxt, G) := st.cxt
   let (t, _, G) ← infoOf cxt G e
-  let err ← IO.FS.Handle.mk ((← IO.getEnv "KTIME_LOG").getD "/dev/stderr") .append
+  let err ← IO.FS.Handle.mk ((← IO.getEnv "KTRACE_LOG").getD "/dev/stderr") .append
   Stats.reset
   let t0 ← IO.monoMsNow
   let task ← IO.asTask (prio := .dedicated) do
