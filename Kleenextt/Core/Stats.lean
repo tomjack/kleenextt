@@ -113,7 +113,7 @@ def Stats.read : IO Stats := statsRef.get
 def residentMB : IO Nat := do
   let s ← IO.FS.readFile "/proc/self/statm"
   match s.splitOn " " with
-  | _ :: pages :: _ => pure ((pages.trim.toNat?.getD 0) * 4096 / 1048576)
+  | _ :: pages :: _ => pure ((pages.trimAscii.toNat?.getD 0) * 4096 / 1048576)
   | _ => pure 0
 
 end Kleenextt.Core

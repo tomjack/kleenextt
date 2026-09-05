@@ -5,7 +5,7 @@ Cohen, Coquand, Huber and Mörtberg (arXiv:1611.02108) with the interval the
 free Kleene algebra rather than the free De Morgan algebra, per the remark
 in §2. Design notes in NOTES.md, literature in REFERENCES.md.
 
-`lake build` produces the self-contained executable
+`lake build` (or `make`) produces the self-contained executable
 `.lake/build/bin/kleenextt`, which needs nothing from the toolchain at run
 time:
 
@@ -18,7 +18,7 @@ definitions only; a file's `#k…` commands run only when it is checked
 itself. `#kconv`, `#kdiffer` and `#kfail` are errors when they fail, and any
 error makes the exit status 1. `#ktime` reports timings and the counters of
 `Core/Stats.lean`; `#ktrace`, `#khead`, `#kstable` and `#koverlaps` are
-diagnostics. `scripts/check-examples.sh` checks the quick examples; the slow
+diagnostics. `lake test` (or `make test`) checks the quick examples; the slow
 ones are `examples/Bench*`, `Hope` and `Pi4S3`.
 
 `Core/` is the type theory (interval, syntax, evaluation, unification,

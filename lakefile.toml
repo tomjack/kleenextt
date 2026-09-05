@@ -1,6 +1,16 @@
 name = "kleenextt"
 defaultTargets = ["Kleenextt", "kleenextt"]
 
+# `lake test`: check the quick examples; Bench*, Hope and Pi4S3 are slow.
+testDriver = "kleenextt"
+testDriverArgs = [
+  "check",
+  "examples/ElabZoo.ktt", "examples/Prelude.ktt", "examples/Cubical.ktt",
+  "examples/Brunerie.ktt", "examples/HLevel.ktt", "examples/S1Mod2.ktt",
+  "examples/Tubes.ktt", "examples/LocalGlobal.ktt", "examples/S2Mod2.ktt",
+  "examples/J2S2.ktt",
+]
+
 [[lean_lib]]
 name = "Kleenextt"
 precompileModules = true
