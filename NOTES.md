@@ -30,8 +30,8 @@ with `Task.spawn` is deterministic. Candidates: the sides of a system in
 `hcompData`, the two components under `transp`/`hcomp` at Σ, the children
 of `readback`. Speculative tasks per thunk are rejected (millions, and they
 compute what laziness skips); atomic refcounting and peak memory are the
-costs. Experiment: `sameCon` and `readback` only, ticks off, the `Bench`
-ladder on one core against all.
+costs. Experiment: `sameCon` and `readback` only, ticks off, the
+`BrunerieBench` rungs on one core against all.
 
 What the derived closure is worth for printing lines.
 

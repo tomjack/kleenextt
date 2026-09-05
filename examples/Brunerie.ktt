@@ -151,3 +151,5 @@ kdef W22 : (A : Type) (x : A) (α β : Ω2 A x) → Ω3 A x :=
                          (k = 0) ↦ α i (¬ l), (k = 1) ↦ β j l ]) x)
 
 kdef brunerieW : Int := writhe (W22 S2 base2 (λ i j => loop2 i j) (λ i j => loop2 i j))
+
+#kconv brunerie = pos (suc (suc zero))

@@ -19,7 +19,7 @@ itself. `#kconv`, `#kdiffer` and `#kfail` are errors when they fail, and any
 error makes the exit status 1. `#ktime` reports timings and the counters of
 `Core/Stats.lean`; `#ktrace`, `#khead`, `#kstable` and `#koverlaps` are
 diagnostics. `lake test` (or `make test`) checks the quick examples;
-`make bench` checks the slow ones, `examples/Bench*`, `Hope` and `Pi4S3`,
+`make bench` checks the slow ones, `examples/BrunerieBench` and `Pi4S3`,
 one process each, reporting wall time, CPU time and peak memory.
 
 `Core/` is the type theory (interval, syntax, evaluation, unification,
