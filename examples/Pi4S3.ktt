@@ -2,7 +2,7 @@ import J2S2
 
 /-! `π₄(S³)` is nontrivial: `η loop3 ≠ refl` by `bit` after transport along
 the 3-cube rotating `J₂S²` by its surfaces (cctt's `hope` without its
-cheats). Not in the default build: 250 s and 11 GB. -/
+cheats). Not in the default build: 390 s and 7.4 GB. -/
 
 data S3 := base3
   | loop3 (i j k : I) [ (i = 0) ↦ base3, (i = 1) ↦ base3, (j = 0) ↦ base3, (j = 1) ↦ base3,

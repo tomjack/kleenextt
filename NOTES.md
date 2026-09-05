@@ -122,4 +122,5 @@ rather than off the goal, and truncations as HIT constructors.
 `examples/J2S2.ktt`: the cheat-free `bit` of tomjack/cubical
 `Stuff/Pi3JS2` is `true` in 5.5 s, where Agda's `canon` reports "not ok!".
 `examples/Pi4S3.ktt`: `π₄(S³)` is nontrivial, cctt's `hope` without its
-cheats, in 250 s and 11 GB.
+cheats; `π4S3Nontrivial` in 234 s and 7.4 GB, the file with its imports
+in 390 s (`KDEF_TIME`).
