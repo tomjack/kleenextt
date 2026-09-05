@@ -1,34 +1,28 @@
 import Lean
 
-/-! Derived closure defunctionalization.
-
-A `defun` block wraps a semantic domain and the mutual block of rules over
-it, with closures written at their use sites as `closure% fun x y => body`.
-The block is elaborated twice: first against an `unsafe` function-valued
-closure type, to record the locals each site captures (everything declared
-is then discarded); then with the closure type an inductive with one
-constructor per site holding those locals, `apply` re-elaborating each
+/-! Derived closure defunctionalization. In a `defun` block, closures are
+written at their use sites as `closure% fun x y => body`. The block is
+elaborated twice: against an `unsafe` function-valued closure type to record
+what each site captures (then discarded), and for real, with the closure
+type an inductive of one constructor per site, `apply` re-elaborating each
 site's lambda in its arm, and a function per `deriving` clause mapping a
 class method over the fields.
 
 `defun C (x : A) (y : B) : V deriving f (p : P) via K.m := impl … in cmds
-end defun` declares `C.apply : C → A → B → V` and `C.f : P → C → C`
-applying `K.m p` to every field, with `⟨impl⟩ : K V` a local instance for
-fields of type `V`; `deriving f (p : P) : T folding op e via K.m := impl`
-instead folds the fields' `K.m p` values with `op` from `e`. `cmds` must
-declare the inductive `V` (alone or in a `mutual` block, with a nullary
-constructor) and, after it, the `mutual` block holding the sites. Section
-variables are not captured. -/
+end defun` gives `C.apply : C → A → B → V` and `C.f : P → C → C`, with
+`⟨impl⟩ : K V` a local instance; `deriving f (p : P) : T folding op e via
+K.m := impl` folds instead. `cmds` must declare `V` (with a nullary
+constructor) before the `mutual` block holding the sites; section variables
+are not captured. -/
 
 open Lean Elab Command Term Meta Parser
 open Lean.Parser.Term (bracketedBinderF matchAltExpr)
 
 namespace Kleenextt.Core.Defun
 
-/-- The first-pass marker around a closure site's body. -/
+/-- Pass-1 marker around a site's body. -/
 def site {α : Sort u} (_id : Nat) (x : α) : α := x
 
-/-- A closure site: `closure% fun x y => body`, inside a `defun` block. -/
 syntax (name := closureSite) "closure% " term : term
 
 @[term_elab closureSite] def elabClosureSite : TermElab := fun stx _ =>
@@ -51,7 +45,6 @@ partial def containsKind (k : SyntaxNodeKind) : Syntax → Bool
   | .node _ k' args => k == k' || args.any (containsKind k)
   | _ => false
 
-/-- The explicit binders `(x : T)` of a binder list, as name/type pairs. -/
 def explicitBinders (stx : Syntax) : CommandElabM (Array (Name × Term)) := do
   let mut out := #[]
   for b in stx.getArgs do
@@ -67,7 +60,6 @@ def binderNames (binders : Array Syntax) (acc : NameSet := {}) : NameSet :=
   binders.foldl (init := acc) fun acc b =>
     b[1].getArgs.foldl (init := acc) fun acc x => if x.isIdent then acc.insert x.getId else acc
 
-/-- The section variables in scope at and inside a block. -/
 partial def sectionVariables (stx : Syntax) : CommandElabM NameSet :=
   return go stx (binderNames (← getScope).varDecls)
 where
@@ -78,8 +70,8 @@ where
       else args.foldl (fun acc a => go a acc) acc
     | _ => acc
 
-/-- Number the closure sites in pre-order and replace each by `f id fn`,
-where `fn` is the site's lambda with its own inner sites replaced. -/
+/-- Number the sites in pre-order and replace each by `f id fn`, inner
+sites first. -/
 partial def rewriteSites [Monad m] (f : Nat → Term → m Term) : Syntax → StateT Nat m Syntax
   | .node info k args => do
     if k == ``closureSite then
@@ -90,7 +82,7 @@ partial def rewriteSites [Monad m] (f : Nat → Term → m Term) : Syntax → St
       return .node info k (← args.mapM (rewriteSites f))
   | stx => pure stx
 
-/-- The pass-1 form of a declaration: `unsafe`, not `partial`, no `deriving`. -/
+/-- `unsafe`, not `partial`, no `deriving`. -/
 partial def unsafeify : Syntax → Syntax
   | .node info k args =>
     if k == ``Command.declaration then
@@ -110,7 +102,6 @@ partial def unsafeify : Syntax → Syntax
     else .node info k (args.map unsafeify)
   | stx => stx
 
-/-- Append declarations to a `mutual` block, or make one from a lone declaration. -/
 def extendMutual (cmd : Syntax) (extra : Array Syntax) : Syntax :=
   if cmd.isOfKind ``Command.mutual then
     cmd.setArg 1 (mkNullNode (cmd[1].getArgs ++ extra))
@@ -125,15 +116,14 @@ def declaresInductive (name : Name) (stx : Syntax) : Bool :=
 
 structure Site where
   id : Nat
-  /-- The constant the site occurs in. -/
   decl : Name
   ctor : Name := .anonymous
-  /-- The captured locals: names as bound at the site, delaborated types. -/
+  /-- Captured locals: names as bound at the site, delaborated types. -/
   fields : Array (Name × Term)
   fn : Term := ⟨.missing⟩
   deriving Inhabited
 
-/-- Find the sites in the constants added since `old`, with their captures. -/
+/-- The sites in the constants added since `old`, with their captures. -/
 def analyze (old : Environment) (sectionVars : NameSet) (val : Ident) : CommandElabM (Array Site) := do
   let env ← getEnv
   let consts := env.constants.map₂.toList.filter fun (n, _) => !old.contains n
@@ -153,8 +143,7 @@ def analyze (old : Environment) (sectionVars : NameSet) (val : Ident) : CommandE
             if sectionVars.contains d.userName then continue
             if fields.any (·.1 == d.userName) then
               throwError "defun: two captured locals named `{d.userName}` at site {id}"
-            -- Unfold abbreviations mentioning the domain: they may be
-            -- declared after the inductive block.
+            -- Abbreviations over the domain may be declared after it.
             let ty ← Meta.transform (← instantiateMVars d.type) (pre := fun e => do
               let e' ← whnfR e
               return if e' == e || (e'.find? (·.isConstOf valName)).isNone then .continue else .visit e')
@@ -163,7 +152,6 @@ def analyze (old : Environment) (sectionVars : NameSet) (val : Ident) : CommandE
         return .continue)
     ref.get
   let sites := sites.qsort (·.id < ·.id)
-  -- Constructor names: the enclosing definition, numbered.
   let mut counts : NameMap Nat := {}
   let mut out := #[]
   for s in sites do
@@ -178,8 +166,7 @@ def analyze (old : Environment) (sectionVars : NameSet) (val : Ident) : CommandE
 structure Deriving where
   name : Name
   params : Array (Name × Term)
-  /-- Result type, combining operation and its unit, for a fold over the
-  fields; an endomap of the closure type when absent. -/
+  /-- Result type, operation, unit; an endomap when absent. -/
   fold : Option (Term × Term × Term)
   method : Name
   impl : Term
@@ -194,9 +181,8 @@ def parseDeriving (stx : Syntax) : CommandElabM Deriving := do
 def freshIdents (n : Nat) (base : String) : CommandElabM (Array Ident) :=
   (Array.range n).mapM fun k => return mkIdent (← liftCoreM (mkFreshUserName (.mkSimple s!"{base}{k}")))
 
-/-- The constructor applied to the captured locals; `ref` positions the
-arguments at the site (with its original source info, so that the linters
-count them as uses of the locals). -/
+/-- The constructor applied to the captured locals, positioned at `ref` so
+that the linters count them as uses. -/
 def mkCtorApp (cloName : Name) (s : Site) (ref : Syntax := .missing) : Term :=
   Syntax.mkApp (mkIdent (cloName ++ s.ctor))
     (s.fields.map fun (x, _) => ⟨Syntax.ident ref.getHeadInfo x.toString.toRawSubstring x []⟩)
@@ -244,7 +230,7 @@ def mkInductive (name : Ident) (ctors : Array Syntax) : Syntax :=
   let (cmds1, _) ← (cmds.mapM (rewriteSites mkSite1)).run 0
   let cmds1 := cmds1.map unsafeify
   let cmds1 := cmds1.set! indIdx (extendMutual cmds1[indIdx]! #[hoasClo])
-  -- The derived functions exist in the first pass only to be referenced.
+  -- Stubs, so that the rules can reference the derived functions.
   let stubs ← derivings.mapM fun (d : Deriving) => do
     let binders ← d.params.mapM fun (x, ty) => mkExplicitBinder (mkIdent x) ty
     match d.fold with
@@ -267,7 +253,7 @@ def mkInductive (name : Ident) (ctors : Array Syntax) : Syntax :=
     if s.fields.any fun (x, _) => x.hasMacroScopes then
       logWarning m!"defun: site {s.ctor} captures an inaccessible local"
 
-  -- Pass 2: the inductive, the sites, `apply`, and the derived maps.
+  -- Pass 2.
   let ctors ← sites.mapM fun s => do
     let bs ← s.fields.mapM fun (x, ty) => mkExplicitBinder (mkIdent x.eraseMacroScopes) ty
     return mkCtor (mkIdent s.ctor) bs
@@ -304,8 +290,7 @@ def mkInductive (name : Ident) (ctors : Array Syntax) : Syntax :=
     `(partial def $(mkIdent (cloName ++ d.name)):ident $binders:bracketedBinder* ($c : $cloId) : $resTy :=
       let _ : $cls $retTy := ⟨$(d.impl)⟩
       match $c:ident with $alts:matchAlt*)
-  -- The `partial` derived functions need the closure type inhabited, which
-  -- follows from a nullary constructor of the domain.
+  -- `partial` needs the closure type inhabited.
   let nonempty ← `(deriving instance Nonempty for $retTy, $cloId)
   let cmds2 := cmds2.set! indIdx (extendMutual cmds2[indIdx]! #[ind])
   let cmds2 := cmds2.set! funIdx (extendMutual cmds2[funIdx]! (#[apply] ++ derived))

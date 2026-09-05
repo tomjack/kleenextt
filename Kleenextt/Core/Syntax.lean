@@ -7,17 +7,15 @@ inductive Icit where
   | impl
   deriving Repr, DecidableEq, Inhabited
 
-/-- How a surface-syntax argument or binder is given: `f u`, `f {u}`, `f {x := u}`. -/
+/-- `f u`, `f {u}`, `f {x := u}`. -/
 inductive ArgKind where
   | expl
   | impl
   | named (x : String)
   deriving Repr, Inhabited
 
-/-- Surface syntax: names, no indices. Produced by the `kexpr` frontend.
-Systems `[φ ↦ t, …]` are lists of (cofibration, term) pairs and only occur as
-arguments of the cubical special forms; binder names of those forms are
-recorded next to the terms they scope over. -/
+/-- Surface syntax, by name. Systems occur only as arguments of the cubical
+forms, whose binder names are recorded next to the terms they scope over. -/
 inductive Raw where
   | var (x : String)
   | lam (x : String) (k : ArgKind) (t : Raw)
@@ -44,26 +42,22 @@ inductive Raw where
   | glueTy (a : Raw) (sys : List (Raw × Raw))
   | glue (sys : List (Raw × Raw)) (a : Raw)
   | unglue (b : Raw)
-  /-- An element of a composition in the universe, `glueU [φ ↦ t] a`. -/
   | glueU (sys : List (Raw × Raw)) (a : Raw)
   | split (x P : Raw) (cases : List (String × List String × Raw))
-  /-- `hlevel n h`: the cube the enclosing path binders ask for, filled by
-  the h-level `n` proof `h` of its type. -/
+  /-- The cube the enclosing path binders ask for, filled by `h : isOfHLevel n _`. -/
   | hlevel (n : Nat) (h : Raw)
   | sorry
   deriving Repr, Inhabited
 
-/-- Whether a context entry is a bound variable or a `let`-definition; an
-inserted metavariable is applied to the bound ones. -/
+/-- An inserted metavariable is applied to the bound entries only. -/
 inductive BD where
   | bound
   | defined
   deriving Repr, DecidableEq, Inhabited
 
-/-- Core syntax: de Bruijn indices, binder names kept for printing. Interval
-expressions are `IExpr`s over indices. In `hcomp`/`hfill`/`comp` systems and
-in `comp`'s type, index 0 is the bound interval variable. `papp` records the
-endpoints of the path so that application at `0`/`1` can reduce. -/
+/-- Core syntax on de Bruijn indices. In `hcomp`/`hfill`/`comp` systems and
+`comp`'s type, index 0 is the bound interval variable; `papp` records the
+endpoints so that application at `0`/`1` reduces. -/
 inductive Tm where
   | var (i : Nat)
   | lam (x : String) (i : Icit) (t : Tm)
@@ -88,20 +82,17 @@ inductive Tm where
   | glueTy (a : Tm) (sys : List (IExpr × Tm))
   | glue (tySys sys : List (IExpr × Tm)) (a : Tm)
   | unglue (b : Tm) (sys : List (IExpr × Tm))
-  /-- Elements of a composition in the universe `hcomp Type [φ ↦ E] A`:
-  `glueU [φ ↦ E] [φ ↦ t] a` with `t : E 1` and `a : A` transporting to `t`
-  backwards along `E`; only produced by evaluation. -/
+  /-- `glueU [φ ↦ E] [φ ↦ t] a : hcomp Type [φ ↦ E] A`, `t : E 1` and `a : A`
+  its backward transport along `E`; only produced by evaluation. -/
   | glueU (tySys us : List (IExpr × Tm)) (a : Tm)
   | unglueU (b : Tm) (sys : List (IExpr × Tm))
   | prim (name : String)
-  /-- A top-level definition. -/
   | top (name : String)
-  /-- Dependent case analysis: each case body binds the constructor's fields
-  and interval variables, last one at index 0. -/
+  /-- Each case binds the constructor's fields and interval variables, the
+  last at index 0. -/
   | split (P : Tm) (cases : List (String × List String × Tm)) (x : Tm)
-  /-- The cube over the interval variables `vars` (indices, outermost
-  first) in the type `a`, with the boundary `sys` on their faces, filled
-  by the h-level `n` proof `h`. -/
+  /-- The cube over the variables `vars` (indices, outermost first) in `a`
+  with boundary `sys`, filled by `h : isOfHLevel n a`. -/
   | extend (n : Nat) (a h : Tm) (sys : List (IExpr × Tm)) (vars : List Nat)
   deriving Repr, Inhabited
 
@@ -190,9 +181,8 @@ where
 
 end Tm
 
-/-- Resolve names to indices without type checking; unbound names become
-primitives. Used for the closed templates the kernel needs (equivalences,
-fibers). -/
+/-- Names to indices without type checking, unbound names to primitives;
+for the kernel's closed templates. -/
 partial def Raw.toTm (ns : List String) : Raw → Except String Tm
   | .var x =>
     match ns.idxOf? x with

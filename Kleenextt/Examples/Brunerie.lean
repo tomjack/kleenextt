@@ -1,10 +1,7 @@
 import Kleenextt.Examples.Prelude
 
-/-! The Brunerie-like number of cctt's `tests/brunerie_james_revised.cctt`
-(up to `brunerie`), written in CCHM style after the cubicaltt original
-`examples/brunerie_james.ctt`: connections instead of Cartesian `hcom`
-encodings, Cubical Agda's `isPropIsContr` and `isoToIsEquiv`, direct `J`.
-Equivalences are contractible-fiber. -/
+/-! cctt's `tests/brunerie_james_revised.cctt` up to `brunerie`, in CCHM
+style after cubicaltt's `examples/brunerie_james.ctt`. -/
 
 namespace Kleenextt.Examples.Brunerie
 open Prelude
@@ -22,8 +19,7 @@ kdef isProp : Type → Type := λ A => (a b : A) → Path A a b
 kdef J : {A : Type} {a : A} (C : (x : A) → Path A a x → Type) (d : C a refl) {x : A} (p : Path A a x) → C x p :=
   λ {A} {a} C d {x} p => transp (λ i => C (p i) (λ j => p (i ∧ j))) 0 d
 
--- Isomorphisms to equivalences: Cubical Agda's `isoToIsEquiv`, with the
--- fiber path in our orientation `Path B y (f x)`.
+-- Cubical Agda's `isoToIsEquiv`, fibers oriented `Path B y (f x)`.
 
 kdef isIso : (A B : Type) (f : A → B) → Type :=
   λ A B f => (g : B → A) × ((x : A) → Path A (g (f x)) x) × ((x : B) → Path B (f (g x)) x)
@@ -51,8 +47,6 @@ kdef isoToEquiv : (A B : Type) → iso A B → Equiv A B :=
         hcomp B (λ k => [ (i = 1) ↦ s (p1 (¬ j)) k, (i = 0) ↦ s (p0 (¬ j)) k, (j = 1) ↦ s (f (p i)) k, (j = 0) ↦ s y k ]) (f (sq i j));
       λ i => (p i, λ j => sq1 i j)))
 
--- Integers.
-
 kdef predInt : Int → Int := λ x => case x (λ _ => Int)
   [ pos u ↦ case u (λ _ => Int) [ zero ↦ neg zero, suc n ↦ pos n ], neg v ↦ neg (suc v) ]
 kdef sucInt : Int → Int := λ x => case x (λ _ => Int)
@@ -74,15 +68,13 @@ kdef windingS1 : Ω S1 base → Int := λ p => transp (λ i => helix (p i)) 0 (p
 #kconv windingS1 (λ i => loop (¬ i)) = neg zero
 #kconv windingS1 (pcomp (λ i => loop i) (λ i => loop i)) = pos (suc (suc zero))
 
--- The square with a loop on all four sides, by connections.
 kdef constSquare : (A : Type) (a : A) (p : Path A a a) → PathP (λ i => Path A (p i) (p i)) p p :=
   λ A a p i j => hcomp A (λ k => [ (i = 0) ↦ p (j ∨ ¬ k), (i = 1) ↦ p (j ∧ k), (j = 0) ↦ p (i ∨ ¬ k), (j = 1) ↦ p (i ∧ k) ]) a
 
 kdef rotLoop : (a : S1) → Path S1 a a := λ a => case a (λ a => Path S1 a a)
   [ base ↦ λ i => loop i, loop i ↦ λ j => constSquare S1 base (λ i => loop i) i j ]
 
--- Being an equivalence is a proposition: cubicaltt's `propIsEquivDirect`
--- (`examples/equiv.ctt`), one composition over connections per fiber.
+-- cubicaltt's `propIsEquivDirect` (`examples/equiv.ctt`).
 kdef propIsEquivDirect : (A B : Type) (f : A → B) → isProp (isEquiv f) := λ A B f p q i y =>
   let F : Type := fiber f y;
   let p2 : (w : F) → Path F (fst (p y)) w := snd (p y);
@@ -91,12 +83,10 @@ kdef propIsEquivDirect : (A B : Type) (f : A → B) → isProp (isEquiv f) := λ
    λ w j => hcomp F (λ k => [ (i = 0) ↦ p2 w j, (i = 1) ↦ q2 w (j ∨ ¬ k), (j = 0) ↦ p2 (q2 w (¬ k)) i, (j = 1) ↦ w ])
               (p2 w (i ∨ j)))
 
--- Local-global looping.
-
 kdef Z : Type → Type := λ A => Ω (A → A) (λ x => x)
 
--- One transport along the loop, corrected at `i = 1` by the contraction of
--- `isEquiv id` onto `idIsEquiv` (`anyRotIsEquiv` in brunerie_james.ctt).
+-- `anyRotIsEquiv` of brunerie_james.ctt: corrected at `i = 1` by the
+-- contraction onto `idIsEquiv`.
 kdef rotIsEquiv : (A : Type) (h : Z A) (i : I) → isEquiv (λ x => h i x) :=
   λ A h i =>
     hcomp (isEquiv (λ x => h i x))
@@ -125,8 +115,7 @@ kdef windingS2 : Ω2 S2 base2 → Int :=
 
 #kconv windingS2 (λ i j => loop2 i j) = pos (suc zero)
 
--- The Whitehead product [loop2, loop2].
-
+-- The Whitehead product `[loop2, loop2]`.
 kdef w22' : Ω (Ω2 S2 base2) (λ a b => loop2 a b) :=
   λ j a b => hcomp S2 (λ i => [ (j = 0) ↦ loop2 a b, (j = 1) ↦ loop2 a b, (a = 0) ↦ loop2 i j, (a = 1) ↦ loop2 i j,
                                 (b = 0) ↦ loop2 i j, (b = 1) ↦ loop2 i j ]) (loop2 a b)
@@ -156,8 +145,7 @@ kdef brunerie : Int := writhe w22
 -- ±2; the sign depends on the orientation conventions.
 #kconv brunerie = pos (suc (suc zero))
 
--- The Whitehead square directly, as the tube composite `W₂₂'` of
--- tomjack/cubical `Stuff/Pi3JS2/WhiteheadProduct.agda`.
+-- `W₂₂'` of tomjack/cubical `Stuff/Pi3JS2/WhiteheadProduct.agda`.
 kdef W22 : (A : Type) (x : A) (α β : Ω2 A x) → Ω3 A x :=
   λ A x α β i j k =>
     hcomp A (λ l => [ (i = 0) ↦ β j (l ∨ k), (i = 1) ↦ β j (l ∨ k), (j = 0) ↦ α i (¬ l ∧ k), (j = 1) ↦ α i (¬ l ∧ k),

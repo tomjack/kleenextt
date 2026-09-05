@@ -1,9 +1,7 @@
 import Kleenextt.Examples.Brunerie
 
-/-! The rest of cctt's `brunerie_james_revised.cctt`, towards π₄(S³):
-Eckmann-Hilton, the Hopf construction, and the cube whose writhe is the
-`hope` number of `BenchHope.lean`. Not part of the default build:
-`lake build Kleenextt.Examples.Hope`. -/
+/-! The rest of cctt's `brunerie_james_revised.cctt`. Not in the default
+build. -/
 
 namespace Kleenextt.Examples.Brunerie
 open Prelude
@@ -11,15 +9,12 @@ open Prelude
 kdef Ω4 : (A : Type) → A → Type := λ A x => Ω (Ω3 A x) refl
 kdef isSet : Type → Type := λ A => (a b : A) → isProp (Path A a b)
 
--- Eckmann-Hilton and the Hopf construction.
-
 kdef squareConnAnd : (A : Type) (x : A) (p : Ω2 A x)
   → PathP (λ i => PathP (λ j => Path A x (p i j)) refl (λ k => p i k)) refl refl :=
   λ A x p i j k => p i (j ∧ k)
 
--- The symmetric Eckmann-Hilton of tomjack/cubical `Stuff/BrunerieCobordism.agda`
--- with `erp f x y = (¬f ∧ x) ∨ (f ∧ y) ∨ (x ∧ y)` unfolded; cctt's `EH`,
--- with base `p i k`, costs the same on `generator`.
+-- tomjack/cubical's symmetric `EH` (`Stuff/BrunerieCobordism.agda`), `erp`
+-- unfolded; cctt's costs the same on `generator`.
 kdef EH : (A : Type) (x : A) (p q : Ω2 A x) → PathP (λ i => Path (Path A x x) (p i) (p i)) q q :=
   λ A x p q i j k => hcomp A (λ f => [ (i = 0) ↦ q j (f ∧ k), (i = 1) ↦ q j (f ∧ k), (k = 1) ↦ q j f,
                                        (j = 0) ↦ p i (¬ f ∨ k), (j = 1) ↦ p i (¬ f ∨ k), (k = 0) ↦ p i (¬ f) ]) x
@@ -40,8 +35,6 @@ kdef generatorflip : Int := writhe (hopf S2 base2 (λ i j => loop2 j i))
 
 #ktime generator
 #ktime generatorflip
-
--- Towards π₄(S³): squares over families of sets.
 
 kdef fromPathPPath : (A : I → Type) (a0 : A 0) (a1 : A 1)
   → Path Type (PathP A a0 a1) (Path (A 1) (coe 0 1 (λ i => A i) a0) a1) :=

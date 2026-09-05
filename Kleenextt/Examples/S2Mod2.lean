@@ -2,10 +2,8 @@ import Kleenextt.Examples.S1Mod2
 import Kleenextt.Examples.Tubes
 import Kleenextt.Examples.LocalGlobal
 
-/-! `S²/2`, the sphere with `surf ≡ flip surf`, with its 2-truncation built
-in as a 4-dimensional constructor (`Stuff/Pi3JS2/S2Mod2.agda`), and its
-code family into the groupoid of groupoids, giving `π₂S²/2 → Bool`. The
-constructors are `sbase`, `surf`, `smod2`, `strunc`, next to `S1m2`'s. -/
+/-! `S²/2`, `surf ≡ flip surf`, with its 2-truncation as a constructor
+(`Stuff/Pi3JS2/S2Mod2.agda`), and `Code` into `hGroupoid`: `π₂S²/2 → Bool`. -/
 
 namespace Kleenextt.Examples.S2Mod2
 
@@ -36,12 +34,10 @@ kdef elimS2m2 : (P : S2m2 → Type) (lev : (x : S2m2) → is2Groupoid (P x)) (b 
     [ sbase ↦ b, surf i j ↦ sf i j, smod2 k i j ↦ m k i j,
       strunc x y p q r s t u a b' c d ↦ hlevel 4 (lev (strunc x y p q r s t u a b' c d)) ]
 
--- `surfs∥S²/2∥₂-lemma1`: the `2,2`-extension of `surf` by itself.
+-- `surfs∥S²/2∥₂` and its lemmas.
 kdef surfsLemma1 : ext22 S2m2 sbase (λ i j => surf i j) (λ a b => surf a b) :=
   λ i j a b => hlevel 4 truncS2m2
 
--- The surfaces at every point (`surfs∥S²/2∥₂`): `Ω² S2m2 x` is a set,
--- weakened to the dimension of each cube.
 kdef surfsLemma2 : PathP (λ k => PathP (λ i => PathP (λ j => Ω2 S2m2 (smod2 k i j)) (λ a b => surf a b) (λ a b => surf a b))
                             refl refl)
     (λ i j => surfsLemma1 i j) (λ i j => surfsLemma1 j i) :=
@@ -55,8 +51,7 @@ kdef surfs : (x : S2m2) → Ω2 S2m2 x := λ x => case x (λ x => Ω2 S2m2 x)
 
 #kconv (λ (a b : I) => surfs sbase a b) = (λ a b => surf a b)
 
--- `thingy`: at every point the surface equals its flip (`THINGY-base`,
--- `THINGY-surf`, `THINGY-mod2`, `thingy'`).
+-- `THINGY-*` and `thingy'`: the surface equals its flip at every point.
 kdef thingyBase : Path (Ω2 S2m2 sbase) (λ a b => surf b a) (λ a b => surf a b) := λ t a b => smod2 (¬ t) a b
 kdef thingySurf : PathP (λ i => PathP (λ j => Path (Ω2 S2m2 (surf i j)) (λ a b => surfsLemma1 i j b a) (surfsLemma1 i j))
                           thingyBase thingyBase) refl refl :=
@@ -77,8 +72,7 @@ kdef thingy : (y : S2m2) → Path (Ω2 S2m2 y) (λ i j => surfs y j i) (λ i j =
 
 #kconv (λ (t a b : I) => thingy sbase t a b) = (λ t a b => smod2 (¬ t) a b)
 
--- The truncated circle, with the rotation loop; its groupoid structure
--- is a constructor, where Agda proves `isGroupoidS¹`.
+-- The truncated circle; `isGroupoidS¹` is a constructor.
 kdata S1t := tbase
   | tloop (i : I) [ (i = 0) ↦ tbase, (i = 1) ↦ tbase ]
   | ttrunc (x y : S1t) (p q : Path S1t x y) (r s : Path (Path S1t x y) p q) (a b c : I)
@@ -89,9 +83,7 @@ kdef rotLoopT : (x : S1t) → Path S1t x x := λ x => case x (λ x => Path S1t x
     tloop i ↦ λ l => constSquare S1t tbase (λ i => tloop i) i l,
     ttrunc x y p q r s a b c ↦ λ l => hlevel 3 truncS1t ]
 
--- `rotLoopsMod2`: the loop of automorphisms of `S¹ × ∥S²/2∥₂` rotating
--- the circle and applying the surfaces, and the square showing that it
--- commutes with itself either way (`rotLoopsMod2Mod2`).
+-- `rotLoopsMod2` and `rotLoopsMod2Mod2`.
 kdef rotHelp : (x : S1t) (y : S2m2) → Ω S2m2 y := λ x y => case x (λ _ => Ω S2m2 y)
   [ tbase ↦ refl, tloop i ↦ λ j => surfs y i j,
     ttrunc x' y' p q r s a b c ↦ λ j => hlevel 4 truncS2m2 ]
@@ -113,9 +105,7 @@ kdef rotLoopsSq : Path (ext11 (PairT → PairT) (λ x => x) rotLoops rotLoops)
     (naturalComm PairT rotLoops rotLoops) (flipNaturalComm PairT rotLoops rotLoops) :=
   λ t i j => λ p => (rotSq (fst p) t i j, rotHelpSq (fst p) (snd p) t i j)
 
--- `Code`: the family of groupoids over the truncated sphere, `∥S¹/2∥₁`
--- twisted by its rotation, with `global rotS¹/2 ≡ flipSquare (global
--- rotS¹/2)` over `smod2` (`Code'-mod2`) by `global≡`.
+-- `Code`: `∥S¹/2∥₁` twisted by its rotation; `Code'-mod2` by `global≡`.
 kdef symFlipB : (A : Type) (x : A) (q : Ω A x) (i : I) → Type :=
   λ A x q i => PathP (λ j => Path A x (q (i ∨ j))) (λ k => q (i ∧ k)) refl
 kdef symFlipMain : (A : Type) (x : A) (q : Ω A x) (p : Path (Ω A x) refl q)

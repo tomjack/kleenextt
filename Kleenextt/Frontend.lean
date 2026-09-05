@@ -1,19 +1,17 @@
 import Lean
 import Kleenextt.Core.Check
 
-/-! Lean as the surface language: the `kexpr` syntax category, of existing
-Lean tokens only, and commands that run the Kleenextt elaborator at Lean
-elaboration time. Cubical primitives are identifiers `toRaw` recognises at
-the head of an application. Faces are `(i = 0)`/`(i = 1)` on variables,
-conjoined by juxtaposition; no other cofibrations can be written. -/
+/-! The `kexpr` syntax category, of existing Lean tokens only, and commands
+running the Kleenextt elaborator at Lean elaboration time. Cubical
+primitives are identifiers `toRaw` recognises at the head of an
+application; faces are `(i = 0)`/`(i = 1)` on variables, juxtaposed. -/
 
 namespace Kleenextt.Frontend
 
 open Lean Elab Command
 open Core
 
-/-- A checked top-level object definition; `ty` and `tm` are metavariable-free
-core terms in the context of the preceding definitions. -/
+/-- Zonked core terms in the context of the preceding definitions. -/
 structure KDef where
   name : String
   ty : Tm
@@ -25,15 +23,14 @@ initialize kDefsExt : SimplePersistentEnvExtension KDef (Array KDef) ←
     addImportedFn := Array.flatten
   }
 
-/-- Declared inductive types, most recent first. -/
+/-- Most recent first. -/
 initialize kDatasExt : SimplePersistentEnvExtension DataInfo (List DataInfo) ←
   registerSimplePersistentEnvExtension {
     addEntryFn := fun xs x => x :: xs
     addImportedFn := fun xss => xss.flatten.reverse.toList
   }
 
-/-- The globals with every `kdef` so far defined (closed terms, evaluated in
-order) and the inductive types; the elaboration context itself is empty. -/
+/-- Every `kdef` so far, evaluated in order, in an empty context. -/
 def kCxt (defs : Array KDef) (datas : List DataInfo) : Cxt × Globals :=
   let G := defs.foldl (init := { datas : Globals }) fun G d =>
     let v := Thunk.mk fun _ => eval G 0 [] [] d.tm
@@ -88,7 +85,6 @@ syntax:25 kpibinder+ " -> " kexpr:25 : kexpr
 syntax:10 "λ" kbinder+ " => " kexpr:10 : kexpr
 syntax:10 "let " ident " : " kexpr " := " kexpr "; " kexpr:10 : kexpr
 
-/-- Lambda binders: name, implicitness, and an optional domain annotation. -/
 private def binderToRaw (toRaw : TSyntax `kexpr → Except String Raw) :
     TSyntax `kbinder → Except String (List (String × ArgKind × Option Raw))
   | `(kbinder| $x:ident) => pure [(x.getId.toString, .expl, none)]
@@ -100,7 +96,6 @@ private def binderToRaw (toRaw : TSyntax `kexpr → Except String Raw) :
   | `(kbinder| {$n:ident := $x:ident}) => pure [(x.getId.toString, .named n.getId.toString, none)]
   | stx => throw s!"unsupported binder: {stx.raw.getKind}"
 
-/-- A binder group as a list of (name, implicitness, domain). -/
 private def piBinderToRaw (toRaw : TSyntax `kexpr → Except String Raw) :
     TSyntax `kpibinder → Except String (List (String × Icit × Raw))
   | `(kpibinder| ($xs:ident* : $a)) => do
@@ -113,7 +108,6 @@ private def piBinderToRaw (toRaw : TSyntax `kexpr → Except String Raw) :
     pure (xs.toList.map fun x => (x.getId.toString, .impl, .hole))
   | stx => throw s!"unsupported binder: {stx.raw.getKind}"
 
-/-- System entries `(i = 0)(j = 1) ↦ t`: the face as a conjunction of literals. -/
 private def entriesToRaw (toRaw : TSyntax `kexpr → Except String Raw)
     (entries : List (TSyntax `kentry)) : Except String (List (Raw × Raw)) :=
   entries.mapM fun (entry : TSyntax `kentry) => do
@@ -134,7 +128,6 @@ private def entriesToRaw (toRaw : TSyntax `kexpr → Except String Raw)
       pure (φ, ← toRaw t)
     | _ => throw "unsupported system entry"
 
-/-- Split an application spine into its head and explicit arguments. -/
 private partial def spine (stx : TSyntax `kexpr) : TSyntax `kexpr × List (TSyntax `kexpr) :=
   match stx with
   | `(kexpr| $t $u) =>
@@ -142,8 +135,8 @@ private partial def spine (stx : TSyntax `kexpr) : TSyntax `kexpr × List (TSynt
     (hd, args ++ [u])
   | _ => (stx, [])
 
-/-- The special forms: primitives that take systems or bind variables, with
-their arities. Further arguments are ordinary applications. -/
+/-- Primitives that take systems or bind variables; further arguments are
+ordinary applications. -/
 private def special (name : String) (args : List Raw) : Except String (Option Raw) := do
   let system (r : Raw) : Except String (List (Raw × Raw)) :=
     match r with
@@ -157,12 +150,9 @@ private def special (name : String) (args : List Raw) : Except String (Option Ra
     match r with
     | .lam i .expl a => pure (i, a)
     | _ => throw s!"{name}: expected λ i => A"
-  -- `coe r r' (λ i => A) u` and `hcom r r' A (λ l => […]) u`, the Cartesian
-  -- operations, by connections: the direction `r → r'` is
-  -- `l ↦ (¬l ∧ r) ∨ (l ∧ r') ∨ (r ∧ r')`, constantly `r` when `r = r'`. The
-  -- law `r = r' ⇒ u₀` is the face `(r = r')`, expressible only when one
-  -- endpoint is a constant: `coe`'s constancy cofibration and an extra side
-  -- of `hcom`. With two variable endpoints `hcom k k` does not reduce.
+  -- Cartesian `coe`/`hcom` by connections: `r → r'` is
+  -- `l ↦ (¬l ∧ r) ∨ (l ∧ r') ∨ (r ∧ r')`, constant when `r = r'`. The face
+  -- `(r = r')` needs a constant endpoint, so `hcom k k` does not reduce.
   let dir (r r' l : Raw) : Raw := .ijoin (.ijoin (.imeet (.ineg l) r) (.imeet l r')) (.imeet r r')
   let eqCof (r r' : Raw) : Option Raw :=
     match r, r' with
@@ -263,7 +253,6 @@ partial def toRaw : TSyntax `kexpr → Except String Raw
   | `(kexpr| λ $bs:kbinder* => $t) => do
     let t ← toRaw t
     let bs ← bs.toList.mapM (binderToRaw toRaw)
-    -- An annotated binder `(x : A)` ascribes the type `(x : A) → _`.
     pure (bs.flatten.foldr (fun (x, k, a?) acc =>
       match a? with
       | some a => .ann (.lam x k acc) (.pi x .expl a .hole)
@@ -280,10 +269,8 @@ private def currentCxt : CommandElabM (Cxt × Globals) := do
   let env ← getEnv
   pure (kCxt (kDefsExt.getState env) (kDatasExt.getState env))
 
-/-- `kdata D := c (x : A) … (i : I) … [ (i = 0) ↦ t, … ] | …`: a parameterless
-inductive type, higher if a constructor binds interval variables. Field
-types are checked in the context of the previous fields only (primitives
-and other inductive types are in scope, `kdef`s are not). -/
+/-- `kdata D := c (x : A) … (i : I) … [ (i = 0) ↦ t, … ] | …`. Field types
+see the previous fields and other inductive types, not `kdef`s. -/
 elab "kdata " x:ident " := " cons:sepBy(kcon, " | ") : command => do
   let (_, G) ← currentCxt
   let name := x.getId.toString
@@ -337,7 +324,7 @@ elab "kdef " x:ident " : " a:kexpr " := " t:kexpr : command => do
         let tm ← check cxt (← toRaw t) (eval G cxt.lvl [] cxt.env ty)
         pure (ty, tm) : ElabM (Tm × Tm)).run G
     pure (← zonk G cxt.env cxt.lvl ty, ← zonk G cxt.env cxt.lvl tm)
-  -- With `KDEF_TRACE` set, the counters every two seconds, as `#ktrace`.
+  -- `KDEF_TRACE`: as `#ktrace`.
   let r ← if (← IO.getEnv "KDEF_TRACE").isNone then pure (r ()) else do
     let err ← IO.FS.Handle.mk ((← IO.getEnv "KTIME_LOG").getD "/dev/stderr") .append
     Stats.reset
@@ -362,8 +349,7 @@ elab tk:"#knf " e:kexpr : command => do
   let (n, ty) ← orThrowAt e r
   logInfoAt tk m!"{n}\n  : {ty}"
 
-/-- Normalise, reporting the time of evaluation and of quotation, the
-evaluation counters, and the start of the normal form. -/
+/-- Timings, counters, and the start of the normal form. -/
 elab tk:"#ktime " e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String (Tm × Globals) := do
@@ -380,10 +366,9 @@ elab tk:"#ktime " e:kexpr : command => do
   let shown := if n.length > 200 then String.ofList (n.toList.take 200) ++ "…" else n
   logInfoAt tk m!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {shown}"
 
-/-- `#ktime`, also printing the counters and resident set size every two
-seconds: a growth curve that survives running out of memory. The elaborator
-captures the standard streams, so the samples go through a fresh handle on
-the process's stderr, or on the file named by `KTIME_LOG`. -/
+/-- `#ktime`, sampling counters and resident size every two seconds through
+a fresh stderr handle (or `KTIME_LOG`), since the elaborator captures the
+standard streams. -/
 elab tk:"#ktrace " e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String (Tm × Globals) := do
@@ -415,8 +400,6 @@ private def showFaces {α : Type} (sys : List (Face × α)) : String :=
   "[" ++ ", ".intercalate (sys.map fun (α, _) =>
     if α.isEmpty then "⊤" else " ∧ ".intercalate (α.map fun (l, d) => s!"v{l}={if d then 1 else 0}")) ++ "]"
 
-/-- The head constructor of a value with the faces of its systems, without
-quoting the components. -/
 private partial def headInfo (v : Val) (depth : Nat := 3) : String :=
   match v.whnf with
   | .hcomp _ sys u => s!"hcomp {showFaces sys} ({if depth == 0 then "…" else headInfo u (depth - 1)})"
@@ -446,7 +429,6 @@ private partial def headInfo (v : Val) (depth : Nat := 3) : String :=
   | .glued n sp _ => s!"{n}/{sp.length}"
   | .sub .. | .lazy .. | .cached .. => "unforced"
 
-/-- The elaborated core term of `e`, with its type. -/
 elab tk:"#kterm " e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String (String × String) := do
@@ -455,8 +437,7 @@ elab tk:"#kterm " e:kexpr : command => do
   let (t, ty) ← orThrowAt e r
   logInfoAt tk m!"{t}\n  : {ty}"
 
-/-- The head of `e` after instantiating `k` interval binders at fresh
-variables, with the faces of its systems. -/
+/-- The head after `k` fresh interval binders, with its system faces. -/
 elab tk:"#khead " k:num e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String (Tm × Globals) := do
@@ -468,10 +449,8 @@ elab tk:"#khead " k:num e:kexpr : command => do
   let s ← IO.lazyPure fun _ => headInfo v
   logInfoAt tk s!"levels {cxt.lvl}..{cxt.lvl + k}: {s}"
 
-/-- The system invariant on an `hcomp` value: after instantiating `k`
-interval binders at fresh variables, every two sides must agree on their
-common face and every side at `0` must agree with the base on its face,
-by normal form. -/
+/-- After `k` fresh binders: the sides of an `hcomp` must agree on common
+faces, and at `0` with the base. -/
 elab tk:"#koverlaps " k:num e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String (Tm × Globals) := do
@@ -486,7 +465,6 @@ elab tk:"#koverlaps " k:num e:kexpr : command => do
   match v.whnf with
   | .hcomp _ sys u =>
     let mut report := s!"{showFaces sys}\n"
-    -- Sides at the fresh level `L` against each other on common faces.
     let sides := (sys.map fun (α, s) => (α, s, lineApp G (L + 1) [] s (.var L))).toArray
     for hx : x in [0:sides.size] do
       let (α, s, sv) := sides[x]
@@ -507,10 +485,8 @@ elab tk:"#koverlaps " k:num e:kexpr : command => do
     logInfoAt tk report
   | w => logInfoAt tk s!"not an hcomp: {headInfo w}"
 
-/-- Stability of evaluation under substitution: after instantiating `k`
-interval binders of `e` at fresh variables, the next binder is instantiated
-at a fresh variable with the endpoints then substituted, and directly at
-each endpoint; the normal forms must agree. -/
+/-- After `k` fresh binders: the next one at a fresh variable then
+substituted, against directly at each endpoint. -/
 elab tk:"#kstable " k:num e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String (Tm × Globals) := do
@@ -540,8 +516,8 @@ elab tk:"#ktype " e:kexpr : command => do
     pure (cxt.showVal G a)
   logInfoAt tk m!"{← orThrowAt e r}"
 
-/-- Infer the left side, check the right side against its type, and unify the
-values; on failure return both normal forms. -/
+/-- Infer the left, check the right against its type, unify; on failure both
+normal forms. -/
 private def convSides (cxt : Cxt) (a b : TSyntax `kexpr) : ElabM (Option (String × String)) := do
   let (ta, tya) ← infer cxt (← toRaw a)
   let tb ← check cxt (← toRaw b) tya
@@ -553,8 +529,6 @@ private def convSides (cxt : Cxt) (a b : TSyntax `kexpr) : ElabM (Option (String
     let G ← get
     pure (some ((nf G cxt.env ta).pretty 0 cxt.names, (nf G cxt.env tb).pretty 0 cxt.names))
 
-/-- Assert that the right side checks at the left side's type and that the
-two are convertible. -/
 elab "#kconv " a:kexpr " = " b:kexpr : command => do
   let (cxt, G) ← currentCxt
   match (convSides cxt a b).run G with
@@ -562,8 +536,6 @@ elab "#kconv " a:kexpr " = " b:kexpr : command => do
   | .ok (none, _) => pure ()
   | .ok (some (na, nb), _) => throwErrorAt a s!"not convertible:\n  {na}\n  {nb}"
 
-/-- Assert that the right side checks at the left side's type but the two are
-not convertible. -/
 elab "#kdiffer " a:kexpr " = " b:kexpr : command => do
   let (cxt, G) ← currentCxt
   match (convSides cxt a b).run G with
@@ -571,7 +543,7 @@ elab "#kdiffer " a:kexpr " = " b:kexpr : command => do
   | .ok (some _, _) => pure ()
   | .ok (none, _) => throwErrorAt a "expected the sides to differ, but they are convertible"
 
-/-- Assert that a term does not elaborate, or leaves metavariables unsolved. -/
+/-- Fails to elaborate, or leaves metavariables unsolved. -/
 elab "#kfail " e:kexpr : command => do
   let (cxt, G) ← currentCxt
   let r : Except String (Tm × Tm) := do

@@ -1,9 +1,7 @@
 import Kleenextt.Examples.Brunerie
 
-/-! The timing ladder towards the Brunerie number. Not part of the default
-build: `lake build Kleenextt.Examples.Bench`, and
-`Kleenextt.Examples.BenchDeep` and `Kleenextt.Examples.BenchBrunerie` for
-the slow steps. -/
+/-! The ladder to the Brunerie number; `BenchDeep` and `BenchBrunerie` are
+the slow steps. Not in the default build. -/
 
 namespace Kleenextt.Examples.Brunerie
 

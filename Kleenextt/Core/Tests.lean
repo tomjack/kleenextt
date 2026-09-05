@@ -1,7 +1,6 @@
 import Kleenextt.Core.Interval
 
-/-! Compile-time checks of the interval decision procedure. Each `rfl` forces
-the kernel to run the decision procedure over all assignments. -/
+/-! Each `rfl` runs the decision procedure in the kernel. -/
 
 namespace Kleenextt.Core.Tests
 
@@ -9,7 +8,7 @@ private def i : IExpr := .var 0
 private def j : IExpr := .var 1
 private def k : IExpr := .var 2
 
--- The Kleene inequality — exactly what the Kleene interval adds over De Morgan.
+-- The Kleene inequality, what Kleene adds over De Morgan.
 example : kleene.decLe (.meet i (.neg i)) (.join j (.neg j)) = true := rfl
 example : deMorgan.decLe (.meet i (.neg i)) (.join j (.neg j)) = false := rfl
 
@@ -26,7 +25,6 @@ example : deMorgan.decEq (.meet i (.neg i)) .zero = false := rfl
 -- The Kleene inequality is not an equation between its two sides.
 example : kleene.decEq (.meet i (.neg i)) (.meet j (.neg j)) = false := rfl
 
--- Connectedness endpoints behave as in CCHM: `¬` swaps them.
 example : kleene.decEq (.neg .zero) .one = true := rfl
 
 end Kleenextt.Core.Tests

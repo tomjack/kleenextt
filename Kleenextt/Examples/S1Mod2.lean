@@ -1,9 +1,7 @@
 import Kleenextt.Examples.HLevel
 
-/-! `S¹/2`, the circle with `loop ≡ sym loop`, with its 1-truncation built
-into the type as a constructor (`Stuff/Pi3JS2/S1Mod2.agda` and
-`Truncations.agda`, in one HIT): the recursor and eliminator fill the
-truncation case by `hlevel`. -/
+/-! `S¹/2`, `loop ≡ sym loop`, with its 1-truncation as a constructor
+(`Stuff/Pi3JS2/S1Mod2.agda`, `Truncations.agda`). -/
 
 namespace Kleenextt.Examples.S1Mod2
 
@@ -30,10 +28,7 @@ kdef elimS1m2 : (P : S1m2 → Type) (lev : (x : S1m2) → isGroupoid (P x)) (b :
     [ base ↦ b, loop i ↦ l i, mod2 k i ↦ m k i,
       trunc x y p q r s a b' c ↦ hlevel 3 (lev (trunc x y p q r s a b' c)) ]
 
--- `rotS¹/2`: the rotation loop at every point (`rotS¹/2''` and its
--- extension over the truncation, `rotS¹/2'`, in one case). The `mod2`
--- case is Agda's `extendGroupoid` cube, the `trunc` case fills in the path
--- type, a set, weakened to a groupoid.
+-- `rotS¹/2''` and `rotS¹/2'` in one `case`.
 kdef rot : (x : S1m2) → Path S1m2 x x :=
   λ x => case x (λ x => Path S1m2 x x)
     [ base ↦ λ l => loop l,
@@ -43,8 +38,8 @@ kdef rot : (x : S1m2) → Path S1m2 x x :=
         hlevel 3 (isSetToGroupoid (Path S1m2 (trunc x y p q r s a b c) (trunc x y p q r s a b c))
                     (truncS1m2 (trunc x y p q r s a b c) (trunc x y p q r s a b c))) ]
 
--- `Helix/2`: `Bool` twisted by `not` over the loop; `loop ≡ sym loop` in
--- the universe since both transport as `not`.
+-- `Helix/2`: `Bool` twisted by `not`; `loop ≡ sym loop` since both
+-- transport as `not`.
 kdef notBool : Bool → Bool := λ b => case b (λ _ => Bool) [ true ↦ false, false ↦ true ]
 kdef notNot : (b : Bool) → Path Bool (notBool (notBool b)) b :=
   λ b => case b (λ b => Path Bool (notBool (notBool b)) b) [ true ↦ refl, false ↦ refl ]

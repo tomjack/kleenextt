@@ -6,5 +6,4 @@ import Kleenextt.Core.Eval
 import Kleenextt.Core.Unify
 import Kleenextt.Core.Check
 
-/-! The type theory itself: the interval, core terms, evaluation, unification
-and elaboration. Surfaces (`Frontend`, parsers, interaction) sit outside. -/
+/-! The type theory; surfaces such as `Frontend` sit outside. -/

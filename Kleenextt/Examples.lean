@@ -9,5 +9,4 @@ import Kleenextt.Examples.LocalGlobal
 import Kleenextt.Examples.S2Mod2
 import Kleenextt.Examples.J2S2
 
-/-! Object-language programs checked by `lake build`. The slow ones are not
-imported here: `Kleenextt.Examples.Pi4S3`, `Hope`, and the `Bench*` files. -/
+/-! The slow ones, `Pi4S3`, `Hope` and `Bench*`, are not imported. -/

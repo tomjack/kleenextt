@@ -1,11 +1,8 @@
 import Kleenextt.Examples.Tubes
 
-/-! `Stuff/Pi3JS2/LocalGlobal.agda`: loops of automorphisms of `A` (`Z A`)
-against squares of types at `A` (`Ω2 Type A`), `local` by transport and
-`global` by `Glue` (Brunerie.lean's), inverse up to a path, and the
-naturality of `local` for the Eckmann-Hilton tubes: `local` of `+EH⋆` is
-the composite of the two loops and `local` of `-EH⋆` the composite the
-other way. -/
+/-! `Stuff/Pi3JS2/LocalGlobal.agda`: `Z A` against `Ω2 Type A`, `local` by
+transport and `global` by `Glue`, inverse up to a path; `local` of `±EH⋆`
+is the composite of the two loops, either way round. -/
 
 namespace Kleenextt.Examples.LocalGlobal
 open Tubes
@@ -26,8 +23,6 @@ kdef localGlobalLemma : (A : Type) (α : Z A) (x : A) (p : Ω A x)
 kdef localGlobal : (A : Type) (α : Z A) → Path (Z A) (loc A (global A α)) α :=
   λ A α => λ t => λ i x => localGlobalLemma A α x (λ i => α i x) refl t i
 
--- The transport fillers of `local`, forwards from the identity and
--- backwards to it.
 kdef localFill' : (A : Type) (P : Ω2 Type A)
   → PathP (λ i => PathP (λ f => A → P i f) (λ x => x) (loc A P i)) (λ _ x => x) (λ _ x => x) :=
   λ A P => λ i j x => transp (λ k => P i (j ∧ k)) (¬ i ∨ i ∨ ¬ j) x
@@ -49,7 +44,6 @@ kdef localCommFill' : (A : Type) (P Q : Ω2 Type A) (R : ext11 (Ω Type A) refl 
           (λ j => localFill' A Q j) (λ j => localFill' A Q j) :=
   λ A P Q R => λ i j k x => transp (λ l => R i j (k ∧ l)) (¬ k ∨ ((¬ i ∨ i) ∧ (¬ j ∨ j))) x
 
--- The maps above are equivalences, by `hlevel` in the proposition.
 kdef localIsEquiv : (A : Type) (α : Ω2 Type A)
   → PathP (λ i => isEquiv (loc A α i)) (snd (idEquiv A)) (snd (idEquiv A)) :=
   λ A α => λ i => hlevel 1 (propIsEquivDirect A A (loc A α i))
@@ -68,8 +62,7 @@ kdef localCommFillIsEquiv : (A : Type) (α β : Ω2 Type A) (γ : ext11 (Ω Type
           (λ j k => localFillIsEquiv A β j k) (λ j k => localFillIsEquiv A β j k) :=
   λ A α β γ => λ i j k => hlevel 1 (propIsEquivDirect (γ i j k) A (localCommFill A α β γ i j k))
 
--- `globalComm≡`: two `1,1`-extensions of squares of types are equal when
--- their `local`s are.
+-- `globalComm≡`.
 kdef globalCommEqBridge : (A : Type) (α β : Ω2 Type A) (γ δ : ext11 (Ω Type A) refl α β)
   (ε : Path (ext11 (A → A) (λ x => x) (loc A α) (loc A β)) (localComm A α β γ) (localComm A α β δ))
   → PathP (λ t => PathP (λ i => PathP (λ j => isEquiv (ε t i j)) (localIsEquiv A α i) (localIsEquiv A α i))
@@ -89,8 +82,7 @@ kdef globalCommEq : (A : Type) (α β : Ω2 Type A) (γ δ : ext11 (Ω Type A) r
              (t = 0) ↦ (γ i j k, localCommFill A α β γ i j k, localCommFillIsEquiv A α β γ i j k),
              (t = 1) ↦ (δ i j k, localCommFill A α β δ i j k, localCommFillIsEquiv A α β δ i j k) ]
 
--- `localCommUniq`: `localComm R` is the only `1,1`-extension with a filler
--- from the identity over `R`.
+-- `localCommUniq`.
 kdef localCommUniq : (A : Type) (P Q : Ω2 Type A) (R : ext11 (Ω Type A) refl P Q)
   (S : ext11 (A → A) (λ x => x) (loc A P) (loc A Q))
   (T : PathP (λ i => PathP (λ j => PathP (λ k => A → R i j k) (λ x => x) (S i j)) (localFill' A P i) (localFill' A P i))
@@ -106,10 +98,8 @@ kdef localCommUniq : (A : Type) (P Q : Ω2 Type A) (R : ext11 (Ω Type A) refl P
 kdef naturalComm : (A : Type) (p q : Z A) → ext11 (A → A) (λ x => x) p q := λ A p q => λ i j => λ x => p i (q j x)
 kdef flipNaturalComm : (A : Type) (p q : Z A) → ext11 (A → A) (λ x => x) p q := λ A p q => λ i j => λ x => q j (p i x)
 
--- `localComm+EHProblem`: `local` of `+EH⋆ P Q` is the composite of the
--- loops. `cancelTransports` is the cube in `A` under the `glueU` element
--- `thing2` of the composition type `+EH⋆ P Q i j k`, with Tom Jack's
--- `erp t x y = (¬t ∧ x) ∨ (t ∧ y) ∨ (x ∧ y)` written out.
+-- `localComm+EHProblem`; `thing2` is a `glueU` over `cancelTransports`,
+-- with `erp t x y = (¬t ∧ x) ∨ (t ∧ y) ∨ (x ∧ y)` written out.
 kdef cancelTransports : (A : Type) (P Q : Ω2 Type A) (x : A)
   → PathP (λ i => PathP (λ j => PathP (λ k => A) (transport (Q j) x) (transport (sym (P i)) (loc A P i (loc A Q j x))))
                           (λ k => transp (λ l => P i (k ∧ ¬ l)) 0 (localFill' A P i k x))
@@ -152,7 +142,7 @@ kdef localCommMinusEH : (A : Type) (P Q : Ω2 Type A)
       (localComm A P Q (ehMinusStar Type A P Q)) (flipNaturalComm A (loc A P) (loc A Q)) :=
   λ A P Q => λ t i j => localCommPlusEH A Q P t j i
 
--- `global≡`: squares of types are equal when their `local`s are.
+-- `global≡`.
 kdef globalEqBridge : (A : Type) (α β : Ω2 Type A) (eq : Path (Z A) (loc A α) (loc A β))
   → PathP (λ k => PathP (λ i => isEquiv (eq k i)) (snd (idEquiv A)) (snd (idEquiv A)))
           (localIsEquiv A α) (localIsEquiv A β) :=

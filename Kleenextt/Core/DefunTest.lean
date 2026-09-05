@@ -1,8 +1,7 @@
 import Kleenextt.Core.Interval
 import Kleenextt.Core.Defun
 
-/-! A toy semantic domain exercising `defun`: lines as derived closures,
-with substitution and the support check derived over the captured fields. -/
+/-! A toy domain exercising `defun`. -/
 
 namespace Kleenextt.Core.DefunTest
 
@@ -11,11 +10,9 @@ abbrev Subst := List (Nat × IExpr)
 def Subst.apply (σ : Subst) (r : IExpr) : IExpr :=
   (r.mapVars fun l => ((σ.find? (·.1 == l)).map (·.2)).getD (.var l)).norm
 
-/-- Interval substitution on a field type. -/
 class Act (α : Type) where
   act : Nat → Subst → α → α
 
-/-- The interval levels a field may mention, as a bitmask. -/
 class Vars (α : Type) where
   vars : α → Nat
 
@@ -23,8 +20,7 @@ def levelSet (ls : List Nat) : Nat := ls.foldl (· ||| 1 <<< ·) 0
 
 instance : Act IExpr := ⟨fun _ σ r => σ.apply r⟩
 instance : Vars IExpr := ⟨fun r => levelSet r.vars⟩
-/-- A captured face is the face of the system component the closure is, so
-substitution into the component is under a substitution making it hold. -/
+/-- Substitution into a component is under a substitution making its face hold. -/
 instance : Act Face := ⟨fun _ σ α => α.filter fun (l, _) => (σ.find? (·.1 == l)).isNone⟩
 instance : Vars Face := ⟨fun α => levelSet (α.map (·.1))⟩
 instance [Act α] [Act β] : Act (α × β) := ⟨fun L σ (a, b) => (Act.act L σ a, Act.act L σ b)⟩
@@ -102,13 +98,12 @@ mutual
     | .pair a _ => .line (closure% fun _ _ => a)
     | x => constLine x
 
-  /-- At `j`: the pair of `a j` and the line `k ↦ s (j ∧ k)`; the inner site
-  captures the outer site's binder. -/
+  /-- The inner site captures the outer site's binder. -/
   partial def fill (a s : Val) : Val :=
     .line (closure% fun L1 j =>
       .pair (lineApp L1 a j) (.line (closure% fun L2 k => lineApp L2 s (.meet j k))))
 
-  /-- A component under `α`, tagged; captures a face and a string. -/
+  /-- Captures a face and a string. -/
   partial def component (name : String) (α : Face) (x : Val) : Val :=
     .line (closure% fun L1 _ => .tag name (act L1 (α.map fun (l, d) => (l, IExpr.ofBool d)) x))
 end

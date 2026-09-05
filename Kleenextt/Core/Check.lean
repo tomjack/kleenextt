@@ -7,8 +7,7 @@ unsolved metavariables. -/
 
 namespace Kleenextt.Core
 
-/-- Whether a name came from the source or from an inserted implicit lambda;
-only source names are in scope for lookup. -/
+/-- Only source names are in scope for lookup. -/
 inductive NameOrigin where
   | source
   | inserted
@@ -19,9 +18,8 @@ structure Cxt where
   types : List (String × NameOrigin × Val) := []
   bds : List BD := []
   lvl : Nat := 0
-  /-- What the term being checked must be on the faces of the enclosing
-  path binders: for each, the level from which later binders apply to the
-  value, the face, and the value there. -/
+  /-- What the term must be on the faces of the enclosing path binders: the
+  level later binders apply from, the face, the value. -/
   boundary : List (Nat × Face × Val) := []
 
 namespace Cxt
@@ -29,8 +27,6 @@ namespace Cxt
 def names (cxt : Cxt) : List String :=
   cxt.types.map (·.1)
 
-/-- Extend with a bound variable (a fresh neutral, or a fresh interval
-variable when the type is `I`). -/
 def bind (cxt : Cxt) (x : String) (a : Val) (origin := NameOrigin.source) : Cxt where
   env := (match a with | .interval => Val.i (.var cxt.lvl) | _ => .var cxt.lvl) :: cxt.env
   types := (x, origin, a) :: cxt.types
@@ -38,7 +34,6 @@ def bind (cxt : Cxt) (x : String) (a : Val) (origin := NameOrigin.source) : Cxt 
   lvl := cxt.lvl + 1
   boundary := cxt.boundary
 
-/-- Extend with a definition. -/
 def define (cxt : Cxt) (x : String) (t a : Val) : Cxt where
   env := t :: cxt.env
   types := (x, .source, a) :: cxt.types
@@ -46,8 +41,8 @@ def define (cxt : Cxt) (x : String) (t a : Val) : Cxt where
   lvl := cxt.lvl + 1
   boundary := cxt.boundary
 
-/-- Restrict to a face: the interval variables it fixes become constants,
-which fresh metavariables must not abstract over. -/
+/-- The interval variables `α` fixes become constants, which fresh
+metavariables must not abstract over. -/
 def restrict (G : Globals) (cxt : Cxt) (α : Face) : Cxt :=
   { cxt with
     env := cxt.env.map (face G cxt.lvl [] α)
@@ -57,8 +52,7 @@ def restrict (G : Globals) (cxt : Cxt) (α : Face) : Cxt :=
     boundary := cxt.boundary.filterMap fun (l0, β, v) =>
       (α.meet β).map fun _ => (l0, β.minus α, face G cxt.lvl [] α v) }
 
-/-- The boundary in the current context: each entry's value with the
-binders since its level applied to it. -/
+/-- Each entry's value with the binders since its level applied. -/
 def boundaryNow (G : Globals) (cxt : Cxt) : List (Face × Val) :=
   cxt.boundary.map fun (l0, α, v) =>
     let v := (List.range (cxt.lvl - l0)).foldl (init := v) fun v k =>
@@ -70,25 +64,21 @@ def boundaryNow (G : Globals) (cxt : Cxt) : List (Face × Val) :=
       | _, _, _ => v
     (α, v)
 
-/-- Replace the boundary by one in the current context, transformed. -/
 def mapBoundary (G : Globals) (cxt : Cxt) (f : Val → Val) : Cxt :=
   { cxt with boundary := (cxt.boundaryNow G).map fun (α, v) => (cxt.lvl, α, f v) }
 
 def showVal (G : Globals) (cxt : Cxt) (v : Val) : String :=
   (quote G cxt.lvl v).pretty 0 cxt.names
 
-/-- Close a value over the last variable of the context. -/
 def closeVal (G : Globals) (cxt : Cxt) (v : Val) : Closure :=
   .mk cxt.env (quote G (cxt.lvl + 1) v)
 
-/-- Interval expression over levels → over indices. -/
 def quoteI (cxt : Cxt) (r : IExpr) : IExpr :=
   r.mapVars fun l => .var (cxt.lvl - l - 1)
 
 def quoteSysFlat (G : Globals) (cxt : Cxt) (sys : System Val) : List (IExpr × Tm) :=
   sys.map fun (α, t) => (cxt.quoteI α.toIExpr, quote G cxt.lvl t)
 
-/-- A system of lines, each component under its bound variable. -/
 def quoteSys (G : Globals) (cxt : Cxt) (sys : System Val) : List (IExpr × Tm) :=
   sys.map fun (α, s) =>
     (cxt.quoteI α.toIExpr, quote G (cxt.lvl + 1) (lineApp G (cxt.lvl + 1) [] s (.var cxt.lvl)))
@@ -117,7 +107,6 @@ def unifyCatch (cxt : Cxt) (expected inferred : Val) : ElabM Unit := do
     let G ← get
     throw s!"type mismatch ({e})\nexpected: {cxt.showVal G expected}\ninferred: {cxt.showVal G inferred}"
 
-/-- Insert fresh implicit applications while the type is an implicit Pi. -/
 partial def insertAll (cxt : Cxt) (t : Tm) (a : Val) : ElabM (Tm × Val) := do
   match ← forceC cxt a with
   | .pi _ .impl _ c =>
@@ -126,12 +115,10 @@ partial def insertAll (cxt : Cxt) (t : Tm) (a : Val) : ElabM (Tm × Val) := do
     insertAll cxt (.app t m .impl) (c.apply G cxt.lvl [] (eval G cxt.lvl [] cxt.env m))
   | a => pure (t, a)
 
-/-- Insert implicit applications unless the term is an implicit lambda. -/
 def insert (cxt : Cxt) : Tm × Val → ElabM (Tm × Val)
   | (t@(.lam _ .impl _), a) => pure (t, a)
   | (t, a) => insertAll cxt t a
 
-/-- Insert implicit applications until the implicit Pi named `name`. -/
 partial def insertUntilName (cxt : Cxt) (name : String) (t : Tm) (a : Val) : ElabM (Tm × Val) := do
   match ← forceC cxt a with
   | a@(.pi x .impl _ c) =>
@@ -155,7 +142,6 @@ private def rpi (x : String) (a b : Raw) : Raw := .pi x .expl a b
 private def rarr (a b : Raw) : Raw := .pi "_" .expl a b
 private def rimpl (x : String) (a b : Raw) : Raw := .pi x .impl a b
 
-/-- Types of the primitive constants. -/
 private def primType : String → Option Raw
   | "PathP" => some <|
     rpi "A" (rarr (rv "I") .univ) <| rarr (rap (rv "A") [.i0]) <| rarr (rap (rv "A") [.i1]) .univ
@@ -166,20 +152,19 @@ private def primType : String → Option Raw
   | "Equiv" => some (rarr .univ (rarr .univ .univ))
   | _ => none
 
-/-- The type `(i : I) → Type` of lines of types. -/
+/-- `(i : I) → Type`. -/
 def lineU : Val := .pi "i" .expl .interval (.mk [] .univ)
 
-/-- `(T : Type) × Equiv T A`, the type of a `Glue` component over `A`. -/
+/-- `(T : Type) × Equiv T A`. -/
 def glueCompTy (A : Val) : Val :=
   .sigma "T" .univ (.mk [A] (.app (.app (.prim "Equiv") (.var 0) .expl) (.var 1) .expl))
 
-/-- The type of a constructor: its fields, then its interval binders. -/
 def conType (d : DataInfo) (con : ConInfo) : Tm :=
   con.fields.foldr (fun (f, T) acc => .pi f .expl T acc)
     (con.ivars.foldr (fun i acc => .pi i .expl .interval acc) (.prim d.name))
 
 mutual
-  /-- Check a type: `I` is allowed as a Pi domain but is not in `Type`. -/
+  /-- `I` is allowed as a domain but is not in `Type`. -/
   partial def checkType (cxt : Cxt) (t : Raw) : ElabM Tm := do
     match t with
     | .var "I" =>
@@ -227,8 +212,7 @@ mutual
         boundary := (cxt.lvl + 1, [(cxt.lvl, false)], x0) :: (cxt.lvl + 1, [(cxt.lvl, true)], x1) :: cxt.boundary }
       let t ← check cxt' t (lineApp G cxt'.lvl [] A (.var cxt.lvl))
       let G ← get
-      -- Evaluated in the restricted context, not restricted afterwards: the
-      -- open value can be far larger.
+      -- Evaluated in the restricted context: the open value can be far larger.
       let at0 := eval G cxt'.lvl [] (cxt'.restrict G [(cxt.lvl, false)]).env t
       let at1 := eval G cxt'.lvl [] (cxt'.restrict G [(cxt.lvl, true)]).env t
       try unify cxt.lvl at0 x0; unify cxt.lvl at1 x1
@@ -253,8 +237,7 @@ mutual
         throw s!"hlevel: {m} cube variables but level {n}"
       let hty := vApp G cxt.lvl [] (eval G 0 [] [] (isOfHLevelTm n)) a .expl
       let h ← check cxt h hty
-      -- Above the level: a constant type is filled directly, over a family
-      -- `h` is weakened up to the dimension.
+      -- Above the level, over a family, `h` is weakened up to the dimension.
       let aTm := quote G cxt.lvl a
       let dependent := ls.any fun l => (Val.vars G a).testBit l
       let h := if dependent then
@@ -427,8 +410,7 @@ mutual
           c := c.bind name .interval
         let G ← get
         let conEnv := args.reverse
-        -- The boundary the case must respect, which `hlevel` in the body
-        -- fills towards.
+        -- What `hlevel` in the body fills towards.
         let faces := con.boundary.flatMap fun (φ, e) =>
           (invFormula (evalI conEnv φ) true).map fun δ =>
             (c.lvl, δ, splitApp G c.lvl [] (face G c.lvl [] δ vP) (cxt.env.map (face G c.lvl [] δ)) cases'
@@ -511,9 +493,8 @@ mutual
         pure (.unglue b (cxt.quoteSysFlat G sysG), A)
       | a => do let G ← get; throw s!"expected a Glue type, inferred: {cxt.showVal G a}"
 
-  /-- Check the components of a system `[φ ↦ t]` whose terms bind an interval
-  variable `j`, against a type `ty` in `cxt, j`. Returns the core entries and
-  the components as lines in `j`, indexed by face. -/
+  /-- Components binding `j`, against `ty` in `cxt, j`; the core entries and
+  the components as lines by face. -/
   partial def checkBoundSys (cxt : Cxt) (j : String) (sys : List (Raw × Raw)) (ty : Val) :
       ElabM (List (IExpr × Tm) × System Val) := do
     let cxtj := cxt.bind j .interval
@@ -534,7 +515,6 @@ mutual
     checkCompatible cxt true vsys
     pure (entries, mkSystem [] vsys)
 
-  /-- Check the components of a system whose terms do not bind a variable. -/
   partial def checkFlatSys (cxt : Cxt) (sys : List (Raw × Raw)) (ty : Val) :
       ElabM (List (IExpr × Tm) × System Val) := do
     let mut entries : List (IExpr × Tm) := []
@@ -554,7 +534,6 @@ mutual
     checkCompatible cxt false vsys
     pure (entries, mkSystem [] vsys)
 
-  /-- Overlapping components must agree on their common face. -/
   partial def checkCompatible (cxt : Cxt) (lines : Bool) (vsys : System Val) : ElabM Unit := do
     for (δ1, s1) in vsys do
       for (δ2, s2) in vsys do
@@ -569,7 +548,6 @@ mutual
           try unify (if lines then l + 1 else l) v1 v2
           catch e => throw s!"system components disagree where their faces overlap ({e})"
 
-  /-- The base of a composition must agree with the sides at `0`. -/
   partial def checkBoundary (cxt : Cxt) (vsys : System Val) (u : Tm) : ElabM Unit := do
     for (δ, s) in vsys do
       let G ← get
@@ -604,8 +582,7 @@ mutual
     let G ← get
     pure (.glue (cxt.quoteSysFlat G sysG) entries a)
 
-  /-- `glueU [φ ↦ t] a` at `hcomp Type [φ ↦ E] A`: `t : E 1` on each face,
-  `a : A`, and `a` is the backward transport of `t` along `E` there. -/
+  /-- `t : E 1` on each face, `a : A` its backward transport along `E`. -/
   partial def checkGlueU (cxt : Cxt) (sys : List (Raw × Raw)) (a : Raw) (A : Val) (sysE : System Val) : ElabM Tm := do
     let mut entries : List (IExpr × Tm) := []
     let mut comps : System Val := []
@@ -634,7 +611,6 @@ mutual
     pure (.glueU (cxt.quoteSys G sysE) entries a)
 end
 
-/-- Replace solved metavariables by their solutions; fail on unsolved ones. -/
 partial def zonk (G : Globals) (env : Env) (l : Nat) : Tm → Except String Tm
   | .mvar m => metaSolution m
   | .insertedMeta m bds => do

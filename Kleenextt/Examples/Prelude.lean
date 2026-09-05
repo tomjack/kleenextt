@@ -1,8 +1,6 @@
 import Kleenextt.Frontend
 
-/-! The object-level prelude: paths, transport, the identity equivalence,
-univalence via `Glue`, and the equivalence induced by a line of types, which
-the kernel uses for `hcomp` in the universe. -/
+/-! Paths, transport, `ua`, and CCHM §7.1's equivalence of a line of types. -/
 
 namespace Kleenextt.Examples.Prelude
 
@@ -19,21 +17,18 @@ kdef transport : {A B : Type} → Path Type A B → A → B := λ p a => transp 
 kdef transportRefl : {A : Type} (x : A) → Path A (transport (λ _ => A) x) x :=
   λ {A} x i => transp (λ _ => A) i x
 
--- The identity equivalence, as in CCHM Example 4 (contractible fibers).
+-- CCHM Example 4.
 kdef idEquiv : (A : Type) → Equiv A A :=
   λ A => (λ x => x, λ y => ((y, λ _ => y), λ z i => (snd z i, λ j => snd z (i ∧ j))))
 
--- Univalence: an equivalence gives a line of types, by glueing.
 kdef ua : {A B : Type} → Equiv A B → Path Type A B :=
   λ {A} {B} e i => Glue B [ (i = 0) ↦ (A, e), (i = 1) ↦ (B, idEquiv B) ]
 
--- The computation rule for `ua`, up to a trivial transport (agda/agda#3415).
+-- Up to a trivial transport (agda/agda#3415).
 kdef uaβ : {A B : Type} (e : Equiv A B) (x : A) → Path B (transport (ua e) x) (fst e x) :=
   λ {A} {B} e x i => transp (λ _ => B) i (fst e x)
 
-/-! The equivalence induced by a line of types, CCHM §7.1. `lineToEquivFwd`
-is `eq^i E : Equiv (E 0) (E 1)`; `hcomp` in the universe needs the
-direction `Equiv (E 1) (E 0)`. -/
+-- CCHM §7.1, `eq^i E : Equiv (E 0) (E 1)`.
 
 kdef lineToEquivFwd : (E : I → Type) → Equiv (E 0) (E 1) := λ E =>
   let f : E 0 → E 1 := λ x => transp (λ i => E i) 0 x;

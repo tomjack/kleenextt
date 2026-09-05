@@ -1,16 +1,14 @@
 import Kleenextt.Core.Eval
 
-/-! Pattern unification, after elaboration-zoo 04. A metavariable applied to
-distinct bound variables (ordinary or interval) is solved by inverting the
-spine into a partial renaming and reading the other side back under it. -/
+/-! Pattern unification after elaboration-zoo 04, with interval variables in
+spines. -/
 
 namespace Kleenextt.Core
 
 abbrev UnifyM := StateT Globals (Except String)
 
-/-- Invert a spine of distinct bound variables. Also returns, for each spine
-entry (last argument first), its implicitness and whether it is an interval
-variable. -/
+/-- Also returns, per entry (last first), implicitness and whether it is an
+interval variable. -/
 def invert (G : Globals) (gamma : Nat) (sp : Spine) :
     Except String (PRen × List (Icit × Bool)) := do
   let rec go : Spine → Except String (Nat × List (Nat × Nat) × List (Icit × Bool))
@@ -26,7 +24,6 @@ def invert (G : Globals) (gamma : Nat) (sp : Spine) :
   let (dom, ren, sorts) ← go sp
   pure ({ dom, cod := gamma, ren := fun x => (ren.find? (·.1 == x)).map (·.2) }, sorts)
 
-/-- Wrap a term in lambdas matching the spine, outermost first. -/
 private def lams (sorts : List (Icit × Bool)) (t : Tm) : Tm :=
   let rec go (n : Nat) : List (Icit × Bool) → Tm
     | [] => t
@@ -47,9 +44,8 @@ private def ieqOr (r s : IExpr) : UnifyM Unit :=
 
 private unsafe def ptrEqImpl {α : Type} (a b : α) : Bool := ptrEq a b
 
-/-- Physical equality, as a shortcut: the same object is convertible to
-itself, and the same closure code over convertible environments gives
-convertible values. -/
+/-- Shortcut: the same object, or the same closure code over convertible
+environments, is convertible. -/
 @[implemented_by ptrEqImpl] private def ptrEqSafe {α : Type} (_ _ : α) : Bool := false
 
 mutual
@@ -58,8 +54,7 @@ mutual
     | (t, _) :: sp, (t', _) :: sp' => do unifySp l sp sp'; unify l t t'
     | _, _ => throw "unify: spine length mismatch"
 
-  /-- Unify two systems with the same faces; `lines` if the components bind
-  an interval variable. -/
+  /-- `lines` if the components bind an interval variable. -/
   partial def unifySys (l : Nat) (lines : Bool) (sys sys' : System Val) : UnifyM Unit := do
     unless sys.length == sys'.length do throw "unify: system shapes differ"
     for (α, s) in sys do
@@ -72,8 +67,6 @@ mutual
             (face G (l + 1) [] α (lineApp G (l + 1) [] s' (.var l)))
         else unify l (face G l [] α s) (face G l [] α s')
 
-  /-- The same closure code over convertible environments, else the bodies
-  at a fresh variable. -/
   partial def unifyClo (l : Nat) (c c' : Closure) (fresh : Val) : UnifyM Unit := do
     let G ← get
     let bodies := unify (l + 1) (c.apply G (l + 1) [] fresh) (c'.apply G (l + 1) [] fresh)

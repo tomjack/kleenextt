@@ -1,8 +1,6 @@
 import Kleenextt.Examples.Brunerie
 
-/-! `hlevel n h`: the cube the enclosing path binders ask for, filled in a
-type of h-level `n` by `h`, with the boundary read off the binders' types
-(kangrongji's `extend`, with the boundary supplied by the elaborator). -/
+/-! `hlevel n h`: the cube the enclosing path binders ask for, filled by `h`. -/
 
 namespace Kleenextt.Examples.HLevel
 
@@ -10,8 +8,7 @@ kdef isSet : Type → Type := λ A => (a b : A) → isProp (Path A a b)
 kdef isGroupoid : Type → Type := λ A => (a b : A) → isSet (Path A a b)
 kdef is2Groupoid : Type → Type := λ A => (a b : A) → isGroupoid (Path A a b)
 
--- Weakening, one level at a time: a square in a proposition (cctt's
--- `isProp-isSet`), then by the path types.
+-- cctt's `isProp-isSet`, then by the path types.
 kdef isPropToSet : (A : Type) → isProp A → isSet A :=
   λ A h a b p q => λ j i => hcomp A (λ k => [ (i = 0) ↦ h a a k, (i = 1) ↦ h a b k,
                                               (j = 0) ↦ h a (p i) k, (j = 1) ↦ h a (q i) k ]) a
@@ -20,13 +17,11 @@ kdef isSetToGroupoid : (A : Type) → isSet A → isGroupoid A :=
 kdef isGroupoidTo2Groupoid : (A : Type) → isGroupoid A → is2Groupoid A :=
   λ A h a b => isSetToGroupoid (Path A a b) (h a b)
 
--- Being a proposition or a set is a proposition.
 kdef isPropIsProp : (A : Type) → isProp (isProp A) :=
   λ A h1 h2 => λ i => λ a b => hlevel 1 (isPropToSet A h1 a b)
 kdef isPropIsSet : (A : Type) → isProp (isSet A) :=
   λ A h1 h2 => λ i => λ a b p q => hlevel 1 (isPropToSet (Path A a b) (h1 a b) p q)
 
--- Closure under Π and Σ, by `hlevel` in the fibres.
 kdef isPropPi : (A : Type) (B : A → Type) → ((x : A) → isProp (B x)) → isProp ((x : A) → B x) :=
   λ A B h f g => λ i => λ x => hlevel 1 (h x)
 kdef isSetPi : (A : Type) (B : A → Type) → ((x : A) → isSet (B x)) → isSet ((x : A) → B x) :=
@@ -36,7 +31,6 @@ kdef isSetSigma : (A : Type) (B : A → Type) → isSet A → ((x : A) → isSet
     (hA (fst u) (fst v) (λ i => fst (p i)) (λ i => fst (q i)) i j,
      hlevel 2 (hB (hA (fst u) (fst v) (λ i => fst (p i)) (λ i => fst (q i)) i j)))
 
--- A retract of a set is a set.
 kdef isSetRetract : (A B : Type) (s : A → B) (r : B → A) (h : (a : A) → Path A (r (s a)) a)
   → isSet B → isSet A :=
   λ A B s r h hB a b p q => λ i j =>
@@ -47,7 +41,7 @@ kdef isPropRetract : (A B : Type) (s : A → B) (r : B → A) (h : (a : A) → P
   → isProp B → isProp A :=
   λ A B s r h hB a b => λ i => hcomp A (λ k => [ (i = 0) ↦ h a k, (i = 1) ↦ h b k ]) (r (hB (s a) (s b) i))
 
--- `Bool` is a set, by encode-decode into a family of propositions.
+-- `Bool` is a set by encode-decode.
 kdata Unit := tt
 kdata Empty :=
 
@@ -75,8 +69,7 @@ kdef decodeEncodeBool : (a b : Bool) (p : Path Bool a b) → Path (Path Bool a b
 kdef isSetBool : isSet Bool :=
   λ a b => isPropRetract (Path Bool a b) (codeBool a b) (encodeBool a b) (decodeBool a b) (decodeEncodeBool a b) (isPropCodeBool a b)
 
--- Paths in the universe between sets form a set: `Path Type A B` is a
--- retract of `Equiv A B` by `ua`, since `ua (pathToEquiv p) ≡ p`.
+-- `Path Type A B` is a retract of `Equiv A B` by `ua`.
 kdef JRefl : {A : Type} {a : A} (C : (x : A) → Path A a x → Type) (d : C a refl) → Path (C a refl) (J C d refl) d :=
   λ {A} {a} C d => transportRefl d
 kdef uaIdEquiv : (A : Type) → Path (Path Type A A) (ua (idEquiv A)) refl :=
@@ -101,8 +94,6 @@ kdef isSetEquiv : (A B : Type) → isSet B → isSet (Equiv A B) :=
 kdef isSetPathType : (A B : Type) → isSet B → isSet (Path Type A B) :=
   λ A B hB => isSetRetract (Path Type A B) (Equiv A B) (pathToEquiv A B) (λ e => ua e) (uaPathToEquiv A B) (isSetEquiv A B hB)
 
--- Equivalences are equal when their functions are; paths in the universe
--- are equal when their transports are.
 kdef equivEq : (A B : Type) (e e' : Equiv A B) → Path (A → B) (fst e) (fst e') → Path (Equiv A B) e e' :=
   λ A B e e' p => λ i => (p i, hlevel 1 (propIsEquivDirect A B (p i)))
 kdef pathEq : (A B : Type) (p q : Path Type A B) → Path (A → B) (transport p) (transport q) → Path (Path Type A B) p q :=
@@ -113,7 +104,6 @@ kdef pathEq : (A B : Type) (p q : Path Type A B) → Path (A → B) (transport p
     let uep : Path (Path Type A B) (ua (pathToEquiv A B p)) (ua (pathToEquiv A B q)) := λ i => ua (ep i);
     pcomp (sym (uaPathToEquiv A B p)) (pcomp uep (uaPathToEquiv A B q))
 
--- The groupoid of sets.
 kdef hSet : Type := (X : Type) × isSet X
 kdef hSetPath : (X Y : hSet) → Path Type (fst X) (fst Y) → Path hSet X Y :=
   λ X Y p => λ i => (p i, hlevel 1 (isPropIsSet (p i)))
@@ -123,7 +113,6 @@ kdef isGroupoidHSet : isGroupoid hSet :=
   λ X Y => isSetRetract (Path hSet X Y) (Path Type (fst X) (fst Y)) (λ P i => fst (P i)) (hSetPath X Y) (hSetPathRetract X Y)
              (isSetPathType (fst X) (fst Y) (snd Y))
 
--- One level up: the 2-groupoid of groupoids.
 kdef isGroupoidPi : (A : Type) (B : A → Type) → ((x : A) → isGroupoid (B x)) → isGroupoid ((x : A) → B x) :=
   λ A B h f g p q r s => λ i j k => λ x => hlevel 3 (h x)
 kdef isGroupoidSigma : (A : Type) (B : A → Type) → isGroupoid A → ((x : A) → isGroupoid (B x))
@@ -155,7 +144,6 @@ kdef is2GroupoidHGroupoid : is2Groupoid hGroupoid :=
   λ X Y => isGroupoidRetract (Path hGroupoid X Y) (Path Type (fst X) (fst Y)) (λ P i => fst (P i))
              (hGroupoidPath X Y) (hGroupoidPathRetract X Y) (isGroupoidPathType (fst X) (fst Y) (snd Y))
 
--- One more: the 3-groupoid of 2-groupoids.
 kdef is3Groupoid : Type → Type := λ A => (a b : A) → is2Groupoid (Path A a b)
 kdef is2GroupoidTo3Groupoid : (A : Type) → is2Groupoid A → is3Groupoid A :=
   λ A h a b => isGroupoidTo2Groupoid (Path A a b) (h a b)
@@ -204,11 +192,10 @@ kdef cube : (A : Type) (h : isGroupoid A) (a b : A) (p q : Path A a b) (r s : Pa
   → Path (Path (Path A a b) p q) r s :=
   λ A h a b p q r s => λ i j k => hlevel 3 h
 
--- A fibrant binder between the cube's binders and the point.
 kdef sqFun : (A B : Type) (h : isSet B) (f g : A → B) (p q : Path (A → B) f g) → Path (Path (A → B) f g) p q :=
   λ A B h f g p q => λ i j => λ x => hlevel 2 h
 
--- Families over the cube: `lemPropFam'` and `lemSetFam` of the prelude.
+-- cctt's `lemPropFam'` and `lemSetFam`.
 kdef lnFam : (A : I → Type) (h : (i : I) → isProp (A i)) (a0 : A 0) (a1 : A 1) → PathP A a0 a1 :=
   λ A h a0 a1 => λ i => hlevel 1 (h i)
 
@@ -217,13 +204,12 @@ kdef sqFam : (A : I → I → Type) (h : (i j : I) → isSet (A i j)) (p0 : (j :
   → PathP (λ i => PathP (λ j => A i j) (q0 i) (q1 i)) (λ j => p0 j) (λ j => p1 j) :=
   λ A h p0 p1 q0 q1 => λ i j => hlevel 2 (h i j)
 
--- With the whole boundary given, the constructions are the obvious terms.
 #kconv (λ (A : Type) (h : isProp A) (a b : A) => ln A h a b) = (λ A h a b => h a b)
 #kconv (λ (A : Type) (h : isSet A) (a b : A) (p q : Path A a b) => sq A h a b p q) = (λ A h a b p q => h a b p q)
 #kconv (λ (A : Type) (B : A → Type) (h : (x : A) → isProp (B x)) (f g : (x : A) → B x) => isPropPi A B h f g)
   = (λ A B h f g => λ i x => h x (f x) (g x) i)
 
--- Cubes above the level: `h` weakened up to the dimension.
+-- Above the level.
 kdef sqProp : (A : Type) (h : isProp A) (a b : A) (p q : Path A a b) → Path (Path A a b) p q :=
   λ A h a b p q => λ i j => hlevel 1 h
 kdef cubeContr : (A : Type) (h : isContr A) (a b : A) (p q : Path A a b) (r s : Path (Path A a b) p q)

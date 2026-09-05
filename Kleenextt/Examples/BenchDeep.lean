@@ -1,7 +1,6 @@
 import Kleenextt.Examples.Brunerie
 
-/-! One transport further than the split cube: the loop in `S1` that
-`windingS1` then counts. -/
+/-! One transport further than the split cube. -/
 
 namespace Kleenextt.Examples.Brunerie
 

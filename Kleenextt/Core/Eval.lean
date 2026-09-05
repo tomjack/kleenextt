@@ -2,36 +2,29 @@ import Kleenextt.Core.Syntax
 import Kleenextt.Core.Defun
 import Kleenextt.Core.Stats
 
-/-! Cubical NbE in the style of cubicaltt, on de Bruijn levels. `transp` and
-`hcomp` are the primitives; `hcomp` in the universe is a type former of its
-own (cubicaltt's `VCompU`) whose implicit equivalence is backward transport,
-with `lemEq` for the fibers. Equivalences are contractible-fiber.
+/-! Cubical NbE after cubicaltt, on de Bruijn levels; `hcomp` in the
+universe is cubicaltt's `VCompU`, its equivalence backward transport with
+`lemEq` for the fibers.
 
-Interval variables share the level space with ordinary variables; a value
-in a context of size `L` mentions only levels below `L` and may be used in
-any larger context. A `line` is built from a closure derived by
-`Defun.lean`: its body is computed at most once at a fresh variable, its
-support comes from the captures. Substitution (`act`) is skipped outside
-the support and otherwise deferred (`sub`); `whnf` pushes it one layer,
-re-running the rules on the head. Components a total face may discard are
-`lazy`. A top-level definition stays a `glued` head with its spine and
-unfolding; conversion and readback try the spine first.
+A value in a context of size `L` mentions only levels below `L`, interval
+variables included. A `line`'s body is memoised at a fresh variable and its
+support comes from the captures of its derived closure; substitution
+(`act`) is skipped outside the support and otherwise deferred (`sub`),
+pushed one layer by `whnf`. Components a total face may discard are `lazy`;
+definitions stay `glued` heads compared by spine first.
 
 Every operation takes `L`, the fresh-level supply, and the cofibration `κ`
-in scope (cctt's `?cof`). Values are never restricted as an operation: a
-head is inspected under `κ` (`frc`), the work for a face `γ` runs under
-`κ ∧ γ`, and faces are kept relative to `κ`, since a value built under `κ`
-is only inspected under a cofibration entailing `κ`. -/
+in scope: heads are inspected under `κ` (`frc`), a face `γ` works under
+`κ ∧ γ`, and faces are kept relative to `κ`. -/
 
 namespace Kleenextt.Core
 
-/-- A system: components indexed by maximal, incomparable faces, relative
-to the cofibration the system was built under. -/
+/-- Components indexed by maximal faces, relative to the cofibration the
+system was built under. -/
 abbrev System (α : Type) := List (Face × α)
 
-/-- Build a system under `κ`: drop the faces inconsistent with `κ`, strip
-`κ`'s equations from the rest, keep only the maximal faces; the first
-component for a face wins (overlapping components agree by typing). -/
+/-- Under `κ`: drop inconsistent faces, strip `κ`'s equations, keep the
+maximal faces; duplicates agree by typing. -/
 def mkSystem (κ : Face) (entries : System α) : System α :=
   let entries := if κ.isEmpty then entries else
     entries.filterMap fun (γ, u) => (κ.meet γ).map fun _ => (γ.minus κ, u)
@@ -48,8 +41,7 @@ def System.total? (sys : System α) : Option α :=
 def System.restrict (κ : Face) (sys : System α) : System α :=
   if κ.isEmpty then sys else mkSystem κ sys
 
-/-- The faces of a system with the cofibration under which each component
-is used, `κ ∧ α`; faces inconsistent with `κ` are dropped. -/
+/-- Each face with its cofibration `κ ∧ α`; inconsistent faces dropped. -/
 def System.under (κ : Face) (sys : System α) : List (Face × Face × α) :=
   if κ.isEmpty then sys.map fun (α, u) => (α, α, u)
   else sys.filterMap fun (α, u) => (κ.meet α).map fun κα => (α, κα, u)
@@ -87,10 +79,7 @@ end Subst
 def Face.toSubst (α : Face) : Subst :=
   α.map fun (l, d) => (l, .ofBool d)
 
-/-! ## Support
-
-The levels a value may mention as interval variables, as a bitmask; derived
-over the captures of a line's closure. -/
+/-! ## Support: the levels a value may mention, as a bitmask -/
 
 class Vars (α : Type) where
   vars : α → Nat
@@ -110,9 +99,8 @@ def Subst.varsUnder (σ : Subst) (vs : Nat) : Nat :=
 abbrev Vars.none : Vars α := ⟨fun _ => 0⟩
 
 instance : Vars IExpr := ⟨fun r => levelSet r.vars⟩
-/-- A captured face is a cofibration in scope, not part of the support:
-otherwise every line built under it would look as if it mentioned its
-generators. System faces are counted by the pair instance below. -/
+/-- A captured face is a cofibration in scope, not support; system faces
+are counted by the pair instance below. -/
 instance : Vars Face := .none
 instance [Vars α] [Vars β] : Vars (α × β) := ⟨fun (a, b) => Vars.vars a ||| Vars.vars b⟩
 instance [Vars α] : Vars (List α) := ⟨fun xs => xs.foldl (· ||| Vars.vars ·) 0⟩
@@ -121,9 +109,7 @@ instance : Vars String := .none
 instance : Vars Nat := .none
 instance : Vars Icit := .none
 
-/-! ## Templates
-
-Closed object-level definitions the computation rules unfold. -/
+/-! ## Templates: closed definitions the rules unfold -/
 
 private def template (r : Raw) : Tm :=
   match r.toTm [] with
@@ -162,9 +148,7 @@ where
       let path := ap (v "Path") [a, v x, v y]
       .pi x .expl a (.pi y .expl a (if n == 0 then path else go n path))
 
-/-- `isOfHLevelSuc n A h : isOfHLevel (n+1) A` from `h : isOfHLevel n A`: a
-contractible type is a proposition by its contraction, then by the path
-types. -/
+/-- `isOfHLevelSuc n A h : isOfHLevel (n+1) A` from `h : isOfHLevel n A`. -/
 def isOfHLevelSucTm (n : Nat) : Tm := template <| lams ["A", "h"] <| go n (v "A") (v "h")
 where
   go : Nat → Raw → Raw → Raw
@@ -175,8 +159,8 @@ where
       let y := s!"y{n}"
       lams [x, y] (go (n + 1) (ap (v "Path") [a, v x, v y]) (ap h [v x, v y]))
 
-/-- `isContrToProp A h x y = λ i. hcomp A [(i = 0) ↦ h.2 x, (i = 1) ↦ h.2 y] h.1`,
-written in core syntax for the path applications' endpoints. -/
+/-- `isContrToProp A h x y = λ i. hcomp A [(i = 0) ↦ h.2 x, (i = 1) ↦ h.2 y] h.1`;
+core syntax, for the `papp` endpoints. -/
 private def isContrToPropTm : Tm :=
   .lam "A" .expl <| .lam "h" .expl <| .lam "x" .expl <| .lam "y" .expl <| .ilam "i" <|
     .hcomp false (.var 4)
@@ -211,10 +195,8 @@ private def primDef : String → Option (Nat × Tm)
   | "Equiv" => some (2, equivTm)
   | _ => none
 
-/-- A constructor of a user-declared inductive type: a telescope of fields
-(each type in the context of the previous fields, closed otherwise), then
-interval binders, then a boundary system over the interval binders whose
-terms live in the context of the fields and interval binders. -/
+/-- A telescope of fields, then interval binders, then a boundary over the
+interval binders in the context of both. -/
 structure ConInfo where
   name : String
   fields : List (String × Tm)
@@ -224,9 +206,7 @@ structure ConInfo where
 def ConInfo.arity (c : ConInfo) : Nat :=
   c.fields.length + c.ivars.length
 
-/-- A parameterless inductive type; a HIT if some constructor binds
-interval variables. Values of the type are `prim` applications of its
-constructors, plus `hcomp`s for HITs. -/
+/-- Parameterless; a HIT if a constructor binds interval variables. -/
 structure DataInfo where
   name : String
   cons : List ConInfo
@@ -246,21 +226,15 @@ mutual
     | flex (m : Nat) (sp : List (Val × Icit))
     | lam (x : String) (i : Icit) (c : Closure)
     | ilam (x : String) (c : Closure)
-    /-- A semantic line: its body at a fresh variable of level `l`, computed
-    at most once, which instantiation substitutes into and substitution
-    renames, and its support, from the derived closure it was built from. -/
+    /-- Body memoised at fresh level `l`; support from the derived closure. -/
     | line (l : Nat) (body : Thunk Val) (vars : Nat)
-    /-- A deferred substitution, `σ` on `v` in context `L`, with its
-    support; `head` pushes it one layer, computed at most once. -/
+    /-- Deferred substitution with its support; `head` pushes it one layer. -/
     | sub (L : Nat) (σ : Subst) (v : Val) (vars : Nat) (head : Thunk Val)
-    /-- A deferred computation with its support. -/
     | lazy (vars : Nat) (body : Thunk Val)
-    /-- A value with its support, so that the support of a compound value
-    is found without walking it. -/
+    /-- The support of a compound value, without walking it. -/
     | cached (vars : Nat) (v : Val)
-    /-- A top-level definition applied to a spine (latest argument first,
-    interval arguments as `.i r`), with its unfolding: forced transparently,
-    but conversion compares the name and the spine first. -/
+    /-- A definition applied to a spine (latest first), unfolded
+    transparently but compared by spine first. -/
     | glued (name : String) (sp : List (Val × Icit)) (v : Thunk Val)
     | app (t u : Val) (i : Icit)
     | papp (p : Val) (r : IExpr) (x y : Val)
@@ -278,8 +252,7 @@ mutual
     | glueTy (a : Val) (sys : List (Face × Val))
     | glue (tySys sys : List (Face × Val)) (a : Val)
     | unglue (b : Val) (sys : List (Face × Val))
-    /-- `hcomp Type [φ ↦ E] A`: a type former of its own, with elements
-    `glueU`, so that transport along it never builds an equivalence. -/
+    /-- `hcomp Type [φ ↦ E] A` as a type former; its elements are `glueU`. -/
     | hcompU (a : Val) (sys : List (Face × Val))
     | glueU (tySys us : List (Face × Val)) (a : Val)
     | unglueU (b : Val) (sys : List (Face × Val))
@@ -299,14 +272,11 @@ inductive MetaEntry where
   | unsolved
   | solved (v : Val)
 
-/-- Metavariables (numbered densely in creation order), the declared
-inductive types, and the top-level definitions. -/
 structure Globals where
   metas : Array MetaEntry := #[]
   datas : List DataInfo := []
-  /-- Top-level definitions: name, value, type. Closed values, kept out of
-  environments so that substitution never traverses them, and computed only
-  when first referenced. -/
+  /-- Name, value, type. Closed, kept out of environments so substitution
+  never traverses them. -/
   defs : List (String × Thunk Val × Val) := []
 
 def Globals.lookupMeta (G : Globals) (m : Nat) : MetaEntry :=
@@ -323,18 +293,17 @@ def Globals.con? (G : Globals) (c : String) : Option (DataInfo × ConInfo) :=
 
 instance [Vars Val] : Vars Closure := ⟨fun c => match c with | .mk env _ => Vars.vars env⟩
 
-/-- A system component with its face: the face's generators count. -/
+/-- In a system, the face's generators count. -/
 instance [Vars Val] : Vars (Face × Val) := ⟨fun (α, u) => levelSet (α.map (·.1)) ||| Vars.vars u⟩
 
-/-- Expose the head short of unfolding a definition: push deferred
-substitutions and force deferred computations. -/
+/-- The head, short of unfolding a definition. -/
 partial def Val.whnfG : Val → Val
   | .sub _ _ _ _ head => head.get.whnfG
   | .lazy _ body => body.get.whnfG
   | .cached _ v => v.whnfG
   | v => v
 
-/-- Expose the head, unfolding definitions. -/
+/-- The head, unfolding definitions. -/
 partial def Val.whnf (v : Val) : Val :=
   match v.whnfG with
   | .glued _ _ u => u.get.whnf
@@ -374,8 +343,8 @@ partial def Val.headStr (v : Val) (depth : Nat := 3) : String :=
   | .glued n sp _ => s!"{n}/{sp.length}"
   | .sub .. | .lazy .. | .cached .. => "unforced"
 
-/-- Substitute in a system under `κ`: a face `α` becomes the faces on which
-`σ` makes `α`'s equations hold, with the component under each. -/
+/-- A face becomes the faces on which `σ` makes it hold, with the component
+under each. -/
 def System.act (actVal : Subst → Val → Val) (κ : Face) (σ : Subst) (sys : System Val) : System Val :=
   mkSystem κ <| sys.flatMap fun (α, u) =>
     let β : Face := α.filter fun (l, _) => (σ.get l).isNone
@@ -398,8 +367,6 @@ variable (G : Globals)
 include G
 
 mutual
-  /-- The levels a value may mention as interval variables; lines and
-  deferred values answer from their cached support. -/
   partial def Val.vars (v : Val) : Nat :=
     let go := Val.vars
     let goI (r : IExpr) : Nat := levelSet r.vars
@@ -432,9 +399,8 @@ mutual
   partial def Closure.apply (L : Nat) (κ : Face) : Closure → Val → Val
     | .mk env t, u => eval L κ (u :: env) t
 
-  /-- The head of `v` under `κ`: `κ` applied at the head, which re-runs the
-  rule there, and the children deferred. Free when `v` mentions none of
-  `κ`'s generators. -/
+  /-- The head under `κ`, applied at the head only; free when `v` mentions
+  none of `κ`'s generators. -/
   partial def frc (L : Nat) (κ : Face) (v : Val) : Val :=
     if κ.isEmpty then v.whnf else (act L κ κ.toSubst v).whnf
 
@@ -442,7 +408,6 @@ mutual
   partial def frcG (L : Nat) (κ : Face) (v : Val) : Val :=
     if κ.isEmpty then v.whnfG else (act L κ κ.toSubst v).whnfG
 
-  /-- Apply a value of line type `(i : I) → A` to an interval expression. -/
   partial def lineApp (L : Nat) (κ : Face) (f : Val) (r : IExpr) : Val :=
     match frcG L κ f with
     | .glued n sp v => .glued n ((.i r, .expl) :: sp) (Thunk.mk fun _ => lineApp L κ v.get r)
@@ -555,8 +520,8 @@ mutual
       let L' := L + m
       act L κ σ (extend' L' κ n (eval L' κ env' a) (eval L' κ env' h) (evalSysFlat L' κ env' sys))
 
-  /-- Evaluate a system whose components bind an interval variable, giving
-  components of line type, each in the environment restricted to its face. -/
+  /-- Components binding an interval variable become lines, each in the
+  environment restricted to its face. -/
   partial def evalSys (L : Nat) (κ : Face) (env : Env) (sys : List (IExpr × Tm)) : System Val :=
     mkSystem κ <| sys.flatMap fun (φ, t) =>
       (invFormula (κ.apply (evalI env φ)) true).map fun δ =>
@@ -567,10 +532,8 @@ mutual
       (invFormula (κ.apply (evalI env φ)) true).map fun δ =>
         (δ, eval L (κ.conj δ) (env.map (act L κ δ.toSubst)) t)
 
-  /-- Interval substitution into a context of size `L`. A value outside the
-  support of `σ` is returned as is; interval values and lines are
-  substituted at once; anything else is deferred, composing with a pending
-  substitution. -/
+  /-- Skipped outside the support of `σ`; interval values and lines at once;
+  anything else deferred, composing with a pending substitution. -/
   partial def act (L : Nat) (κ : Face) (σ : Subst) (v : Val) : Val :=
     if σ.isEmpty then v else
     tick .act <|
@@ -585,8 +548,8 @@ mutual
         .line L (Thunk.mk fun _ => act (L + 1) κ ((l, .var L) :: σ) body.get) (σ.varsUnder vs)
       | v => tick .subs <| .sub L σ v (σ.varsUnder vs) (Thunk.mk fun _ => push L κ σ v)
 
-  /-- One layer of a substitution known to touch `v`: the children are
-  substituted lazily and the computation rules re-run on a neutral head. -/
+  /-- One layer of a substitution known to touch `v`: children deferred,
+  rules re-run on the head. -/
   partial def push (L : Nat) (κ : Face) (σ : Subst) (v : Val) : Val :=
     let actClo : Closure → Closure
       | .mk env t => .mk (env.map (act L κ σ)) t
@@ -626,38 +589,32 @@ mutual
   partial def actSys (L : Nat) (κ : Face) (σ : Subst) (sys : System Val) : System Val :=
     System.act (act L κ) κ σ sys
 
-  /-- Substitute the endpoints `α` assigns: to instantiate a peeked
-  variable, and to pre-restrict what a face scope captures once, so that
-  inspections under `κ ∧ α` find nothing left to substitute. Only `κ`
-  guarantees the restriction. -/
+  /-- Substitute the endpoints `α` assigns: for a peeked variable, and to
+  pre-restrict a face scope's captures once. Only `κ` guarantees the
+  restriction. -/
   partial def face (L : Nat) (κ : Face) (α : Face) (v : Val) : Val :=
     act L κ α.toSubst v
 
   partial def faceSys (L : Nat) (κ : Face) (α : Face) (sys : System Val) : System Val :=
     actSys L κ α.toSubst sys
 
-  /-- Each face `α` with `κ ∧ α` and its component pre-restricted along
-  `α`, shared by every inspection under `κ ∧ α`. -/
+  /-- Each face `α` with `κ ∧ α` and its component pre-restricted along `α`. -/
   partial def sysUnder (L : Nat) (κ : Face) (sys : System Val) : List (Face × Face × Val) :=
     System.under κ sys |>.map fun (α, κα, s) => (α, κα, face L κ α s)
 
-  /-- A line in context `L` from its closure: the body memoised at the
-  fresh level `L`, the support from the captures. The closure carries the
-  cofibration its body runs under. -/
+  /-- Body memoised at the fresh level `L`; the closure carries the
+  cofibration it runs under. -/
   partial def mkLine (L : Nat) (c : Line) : Val :=
     tick .lines <| .line L (Thunk.mk fun _ => tick .bodies <| gauge .maxLevel (L + 1) <| c.apply (L + 1) (.var L)) (Line.vars c)
 
-  /-- A line in context `L` from a body mentioning the fresh level `L`. -/
+  /-- A line from a body mentioning the fresh level `L`. -/
   partial def mkBind (L : Nat) (body : Val) : Val :=
     .line L (Thunk.pure body) (clearLevel body.vars L)
 
-  /-- A deferred computation from a closure ignoring its interval argument,
-  with the support of the captures: for a component that a total face may
-  discard. -/
+  /-- A deferred computation with the support of its captures. -/
   partial def mkLazy (L : Nat) (c : Line) : Val :=
     tick .lazies <| .lazy (Line.vars c) (Thunk.mk fun _ => tick .lazyBodies <| c.apply L .zero)
 
-  /-- Record the support of a newly built compound value. -/
   partial def cache (v : Val) : Val :=
     tick .cacheds <| .cached v.vars v
 
@@ -682,7 +639,6 @@ mutual
     | _, _ =>
       match G.con? name with
       | some (_, con) =>
-        -- A saturated higher constructor reduces to its boundary on a face that holds.
         if args.length == con.arity then
           let env := args.reverse
           match con.boundary.find? (fun (φ, _) => (κ.apply (evalI env φ)).isOne) with
@@ -696,8 +652,8 @@ mutual
           else .prim name args
         | none => cache (.prim name args)
 
-  /-- Dependent case analysis: reduces on a saturated constructor and, for a
-  HIT, on an `hcomp` (the CHM rule, composing over the filler). -/
+  /-- Reduces on a saturated constructor and, at a HIT, on `hcomp` by the
+  CHM rule. -/
   partial def splitApp (L : Nat) (κ : Face) (P : Val) (env : Env) (cases : List (String × List String × Tm)) (x : Val) : Val :=
     match frc L κ x with
     | .prim c args =>
@@ -729,8 +685,7 @@ mutual
       | _ => cache (.split P env cases x)
     | _ => cache (.split P env cases x)
 
-  /-- `hcomp` at a strict inductive type: constructor-wise, along the field
-  telescope, when the base and every side are the same constructor. -/
+  /-- Constructor-wise when the base and every side share a constructor. -/
   partial def hcompData (L : Nat) (κ : Face) (A : Val) (sys : System Val) (u : Val) : Val :=
     match frc L κ u with
     | .prim c args =>
@@ -745,9 +700,7 @@ mutual
       | none => cache (.hcomp A sys u)
     | _ => cache (.hcomp A sys u)
 
-  /-- The fields of a constructor-wise `hcomp`; `fills` are the fillers of
-  the previous fields, most recent first, which the next field's type may
-  depend on. -/
+  /-- `fills`: the fillers of the previous fields, most recent first. -/
   partial def hcompFields (L : Nat) (κ : Face) (k : Nat) (fields : List (String × Tm)) (fills : List Val)
       (sys : System Val) (args : List Val) : List Val :=
     match fields with
@@ -858,9 +811,8 @@ mutual
   partial def forward (L : Nat) (κ : Face) (a : Val) (r : IExpr) (u : Val) : Val :=
     transp' L κ (mkLine L (closure% fun L1 i => lineApp L1 κ a (.join i r))) r u
 
-  /-- Heterogeneous composition, derived: `comp^i A [φ ↦ u] u₀ =
-  hcomp^i (A 1) [φ ↦ forward A i (u i)] (forward A 0 u₀)`, with `ghcomp`
-  in place of `hcomp` when `general`. -/
+  /-- `comp^i A [φ ↦ u] u₀ = hcomp^i (A 1) [φ ↦ forward A i (u i)] (forward A 0 u₀)`;
+  `ghcomp` when `general`. -/
   partial def comp' (L : Nat) (κ : Face) (a : Val) (sys : System Val) (u0 : Val) (general : Bool) : Val :=
     let sides := sysUnder L κ sys |>.map fun (α, κα, s) =>
       let a := face L κ α a
@@ -933,9 +885,6 @@ mutual
       hcomp' L κ (c.apply L κ u) (mkSystem κ sides) (vApp L κ f u i)
     | _ => cache (.app (cache (.hcomp A sys f)) u i)
 
-  -- Composition in the universe, cubicaltt's `VCompU`: `glueU [φ ↦ E] [φ ↦ t] a`
-  -- with `t : E 1`, `a : A`, and `a` the backward transport of `t` along `E`.
-
   partial def hcompU' (L : Nat) (κ : Face) (A : Val) (sys : System Val) : Val :=
     let sys := System.restrict κ sys
     match sys.total? with
@@ -948,7 +897,7 @@ mutual
     | some t => t
     | none => cache (.glueU (System.restrict κ tySys) us a)
 
-  /-- Transport backwards along a line of types, `E 1 → E 0`. -/
+  /-- `E 1 → E 0`. -/
   partial def eqFun (L : Nat) (κ : Face) (E t : Val) : Val :=
     transp' L κ (revLine L κ E) .zero t
 
@@ -963,8 +912,7 @@ mutual
         panic! s!"unglueU of {b.headStr 2} at {(Val.hcompU .univ sys).headStr}"
       | b => cache (.unglueU b sys)
 
-  /-- `hcomp` at a composition in the universe: as at `Glue`, with the
-  backward transport as the equivalence. -/
+  /-- As `hcompGlue`, with `eqFun` as the equivalence. -/
   partial def hcompHU (L : Nat) (κ : Face) (A : Val) (sysE sys : System Val) (u : Val) : Val :=
     let comps := sysUnder L κ sysE |>.map fun (γ, κγ, E) =>
       let T := lineApp L κγ E .one
@@ -979,13 +927,12 @@ mutual
     let a := mkLazy L (closure% fun L1 _ => hcomp' L1 κ A (mkSystem κ sidesA) (unglueU' L1 κ u sysE))
     glueU' κ sysE (comps.map fun (γ, _, _, t, _) => (γ, t)) a
 
-  /-- The filler of the backward transport: a line from `eqFun E u` (at 0)
-  to `u` (at 1). -/
+  /-- A line from `eqFun E u` to `u`. -/
   partial def transpFillNeg (L : Nat) (κ : Face) (E u : Val) : Val :=
     revLine L κ (transpFill L κ (revLine L κ E) .zero u)
 
-  /-- Per face of `lemEq`, under that face, at `i`: the composite along `j`
-  from `p i` up to `E 1`, and its filler. -/
+  /-- Per face of `lemEq`, at `i`: the composite from `p i` up to `E 1`, and
+  its filler. -/
   partial def lemEqItem (L : Nat) (κ : Face) (E b : Val) (i : IExpr) (ap : Val) : Val × Val :=
     let aa := vFst L κ ap
     let pa := vSnd L κ ap
@@ -995,9 +942,8 @@ mutual
       ++ (invFormula (κ.apply i) true).map (fun δ => (δ, transpFillNeg L (κ.conj δ) E aa))
     (comp' L κ E sides base false, compFill' L κ E sides base)
 
-  /-- cubicaltt's `lemEq`: given a line `E` with `b : E 0` and a partial
-  fiber `[α ↦ (a, p)]` with `a : E 1` and `p : Path (E 0) b (eqFun E a)`,
-  a total fiber `(a, p)` extending it. -/
+  /-- cubicaltt's `lemEq`: a total fiber `(a : E 1, p : Path (E 0) b (eqFun E a))`
+  extending a partial one. -/
   partial def lemEq (L : Nat) (κ : Face) (E b : Val) (aps : System Val) : Val × Val :=
     tick .lemEq <|
     let ta := lineApp L κ E .one
@@ -1018,10 +964,7 @@ mutual
       comp' L1 κ (revLine L1 κ E) (mkSystem κ sides) (lineApp L1 κ p1 i) false)
     (a, p)
 
-  /-- Transport along a line of compositions in the universe: `transpGlue`
-  with `eqFun` as the equivalence and `lemEq` for the fibers. `A` and
-  `sysE` are the components peeked at `i = var L`, made lines again by
-  binding `L`. -/
+  /-- `transpGlue` with `eqFun` as the equivalence and `lemEq` for the fibers. -/
   partial def transpHU (L : Nat) (κ : Face) (r : IExpr) (b0 A : Val) (sysE : System Val) : Val :=
     tick .transpHU <|
     let A1 := face L κ [(L, true)] A
@@ -1073,8 +1016,7 @@ mutual
     let a := mkLazy L (closure% fun L1 _ => hcomp' L1 κ B (mkSystem κ sidesB) (unglue' L1 κ u sysG))
     glue' κ sysG (comps.map fun (γ, _, _, t, _) => (γ, t)) a
 
-  /-- Extend a partial element of a contractible type to a total one:
-  `ext (c, p) [θ ↦ v] = hcomp [θ ↦ p v j, ¬θ ↦ c] c`. -/
+  /-- `ext (c, p) [θ ↦ v] = hcomp [θ ↦ p v j, ¬θ ↦ c] c`. -/
   partial def ext (L : Nat) (κ : Face) (X contr : Val) (θ : System Val) : Val :=
     let c := vFst L κ contr
     let p := vSnd L κ contr
@@ -1085,12 +1027,9 @@ mutual
       ++ (invFormula (κ.apply θ.cof) false).map (fun β => (β, constLine L (face L κ β c)))
     hcomp' L κ X (mkSystem κ sides) c
 
-  /-- Fill the cube over the variables the faces of `sys` mention, in the
-  type `A` of h-level `n` by `h` (kangrongji's `extend`): peel the last
-  variable and fill an `(n-1)`-cube in the path type between its two faces,
-  of h-level `n - 1` by `h`. A proposition fills a line by `h x₀ x₁`, whose
-  endpoints are the faces since the boundary is total; a contractible type
-  fills by `ext`. -/
+  /-- kangrongji's `extend`: peel the last cube variable and fill an
+  `(n-1)`-cube in the path type between its two faces; a proposition fills
+  by `h x₀ x₁`, a contractible type by `ext`. -/
   partial def extend' (L : Nat) (κ : Face) (n : Nat) (A h : Val) (sys : System Val) : Val :=
     let sys := System.restrict κ sys
     match sys.total? with
@@ -1104,8 +1043,7 @@ mutual
     | some l, 1 =>
       let x0 := (sys.find? (·.1 == [(l, false)])).map (·.2) |>.getD (panic! "hlevel: missing face")
       if ls.length > 1 then
-        -- Above the level in a proposition: one composition from a corner,
-        -- `h` joining the corner to each face.
+        -- Above the level: one composition from a corner.
         let c := act L κ (ls.map fun l' => (l', IExpr.zero)) x0
         let sides := sysUnder L κ sys |>.map fun (α, κα, w) =>
           let hα := face L κ α h
@@ -1113,9 +1051,8 @@ mutual
         hcomp' L κ A (mkSystem κ sides) c
       else
       let x1 := (sys.find? (·.1 == [(l, true)])).map (·.2) |>.getD (panic! "hlevel: missing face")
-      -- Over a family, `h` at the point is applied to the endpoints
-      -- transported there; at the ends those transports have `r = 1`, so
-      -- no correction is needed.
+      -- Over a family: the endpoints transported to the point, which at the
+      -- ends is a transport with `r = 1`, so no correction is needed.
       if (Val.vars A).testBit l then
         let Al := Val.line l (Thunk.pure A) (clearLevel (Val.vars A) l)
         let f0 := lineApp L κ (transpFill L κ Al .zero x0) (.var l)
@@ -1129,9 +1066,9 @@ mutual
         if α.mentions l then none else some (α, Val.line l (Thunk.pure w) (clearLevel (Val.vars w) l))
       let (P, h') :=
         if (Val.vars A).testBit l then
-          -- `PathP (λ l. A) x₀ x₁` is `Path (A 1) (transp A x₀) x₁` along
-          -- `t ↦ PathP (λ j. A (t ∨ j)) (transpFill A x₀ t) x₁`; its h-level
-          -- is `h 1 (transp A x₀) x₁` transported back.
+          -- The h-level of `PathP (λ l. A) x₀ x₁` is that of
+          -- `Path (A 1) (transp A x₀) x₁`, transported back along
+          -- `t ↦ PathP (λ j. A (t ∨ j)) (transpFill A x₀ t) x₁`.
           let Al := Val.line l (Thunk.pure A) (clearLevel (Val.vars A) l)
           let fill := transpFill L κ Al .zero x0
           let hx := vApp L κ (vApp L κ (face L κ [(l, true)] h) (lineApp L κ fill .one) .expl) x1 .expl
@@ -1143,10 +1080,9 @@ mutual
         else (prim' L κ "Path" [A, x0, x1], vApp L κ (vApp L κ h x0 .expl) x1 .expl)
       papp' L κ (extend' L κ (n + 1) P h' sys') (.var l) x0 x1
 
-  /-- `transp^i (Glue [φ ↦ (T, e)] A) r b₀`, after Cubical Agda / Huber:
-  the `∀i.φ` correction is folded into a `ghcomp`-based composition in `A`,
-  so no empty systems arise. `A` and `sysG` are the components peeked at
-  `i = var L`, made lines again by binding `L`. -/
+  /-- After Cubical Agda / Huber, the `∀i.φ` correction folded into a
+  `ghcomp` so no empty systems arise. `A` and `sysG` are peeked at
+  `i = var L` and rebound by `mkBind`. -/
   partial def transpGlue (L : Nat) (κ : Face) (r : IExpr) (b0 A : Val) (sysG : System Val) : Val :=
     tick .transpGlue <|
     let A1 := face L κ [(L, true)] A
@@ -1219,8 +1155,7 @@ section
 variable (G : Globals)
 include G
 
-/-- Expose the head short of unfolding a definition: deferred values, and
-solved metavariables. -/
+/-- `whnfG`, also through solved metavariables. -/
 partial def forceG (L : Nat) (v : Val) : Val :=
   match v.whnfG with
   | .flex m sp =>
@@ -1229,15 +1164,15 @@ partial def forceG (L : Nat) (v : Val) : Val :=
     | .unsolved => .flex m sp
   | v => v
 
-/-- Expose the head: deferred values, solved metavariables, definitions. -/
+/-- `forceG`, unfolding definitions. -/
 partial def force (L : Nat) (v : Val) : Val :=
   match forceG G L v with
   | .glued _ _ u => force L u.get
   | v => v
 
-/-- A partial renaming from a context of size `dom` to one of size `cod`,
-mapping levels of the codomain to levels of the domain. Quotation uses the
-identity; unification uses the inverse of a metavariable's spine. -/
+/-- A partial renaming from size `dom` to size `cod`, by levels of the
+codomain; the identity for quotation, the inverse of a spine for
+unification. -/
 structure PRen where
   dom : Nat
   cod : Nat
@@ -1254,9 +1189,8 @@ def lift (p : PRen) : PRen :=
 
 end PRen
 
-/-- Instantiate a case body with fresh variables for the constructor's
-fields and interval binders, starting at level `l`; also the renaming
-lifted over them. -/
+/-- A case body at fresh variables from level `l`, with the renaming lifted
+over them. -/
 def instCase (l : Nat) (env : Env) (c : String) (body : Tm) : Val × PRen :=
   let (nf, ni) := match G.con? c with
     | some (_, con) => (con.fields.length, con.ivars.length)
@@ -1266,10 +1200,8 @@ def instCase (l : Nat) (env : Env) (c : String) (body : Tm) : Val × PRen :=
   let p := (List.range (nf + ni)).foldl (fun q _ => q.lift) (PRen.id l)
   (eval G (l + nf + ni) [] (args.reverse ++ env) body, p)
 
-/-- Read a value back into core syntax under a partial renaming, failing on
-a variable outside the renaming or on an occurrence of metavariable `occ`.
-A definition is read back as its name and spine, unfolded only when that
-fails, unless `unfold`. -/
+/-- Fails on a variable outside the renaming or an occurrence of `occ`. A
+definition reads back by name and spine unless `unfold` or that fails. -/
 partial def readback (p : PRen) (occ : Option Nat) (unfold : Bool) (v : Val) : Except String Tm := do
   let lvl (x : Nat) : Except String Nat :=
     match p.ren x with
@@ -1329,7 +1261,6 @@ partial def readback (p : PRen) (occ : Option Nat) (unfold : Bool) (v : Val) : E
       pure (c, names, ← readback p' occ unfold v)
     pure (.split (← rb P) cases' (← rb x))
 
-/-- Read a value back into core syntax; `l` is the current context size. -/
 def quote (l : Nat) (v : Val) (unfold : Bool := false) : Tm :=
   match readback G (PRen.id l) none unfold v with
   | .ok t => t

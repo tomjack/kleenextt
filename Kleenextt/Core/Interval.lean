@@ -1,16 +1,12 @@
-/-! The interval theory. The equational theory of the free Kleene (and free
-De Morgan) interval is decided by evaluation into the finite algebra
-generating the variety; `Tests.lean` pins the expected (in)equations at
-compile time. The kernel converts interval expressions in the Kleene
-theory. Faces are conjunctions of `(i = 0)`/`(i = 1)` on variables, as in
-cubicaltt; a cofibration is its face normal form (cubicaltt's
-`invFormula`), the same for both intervals. ABCFHL validity (`isValid`) is
-available but not enforced (NOTES.md). -/
+/-! The free Kleene (and De Morgan) interval, decided by evaluation into the
+finite algebra generating the variety; the kernel converts in the Kleene
+theory. Faces are `(i = 0)`/`(i = 1)` conjunctions as in cubicaltt, and a
+cofibration is its face normal form (`invFormula`). `isValid` is available
+but not enforced. -/
 
 namespace Kleenextt.Core
 
-/-- Formal interval expressions: terms in the signature of bounded lattices
-with an involution, over numbered generators. -/
+/-- Terms of a bounded lattice with involution over numbered generators. -/
 inductive IExpr where
   | zero
   | one
@@ -71,10 +67,8 @@ def pretty (name : Nat → String) (p : Nat) : IExpr → String
 
 end IExpr
 
-/-- A finite algebra in the interval signature, carrier listed in `elems`.
-If `A` generates a variety `V`, then an equation holds in the free `V`-algebra
-iff it holds under every assignment into `A` — so `elems` makes the equational
-theory of `V` decidable by enumeration. -/
+/-- A finite algebra generating a variety `V`: an equation holds in the free
+`V`-algebra iff it holds under every assignment into `A`. -/
 structure Alg (α : Type) where
   elems : List α
   bot : α
@@ -109,9 +103,7 @@ def decEq [DecidableEq α] (r s : IExpr) : Bool :=
 def decLe [DecidableEq α] (r s : IExpr) : Bool :=
   A.decEq (.join r s) s
 
-/-- `decEq`, enumerating assignments only for the generators that occur, so
-the cost is exponential in the number of generators mentioned rather than
-in the largest generator index. -/
+/-- `decEq` over the generators that occur, not up to the largest index. -/
 def decEqOn [DecidableEq α] (r s : IExpr) : Bool :=
   let vs := (r.vars ++ s.vars).eraseDups
   (A.envs vs.length).all fun ρ =>
@@ -122,9 +114,8 @@ def decEqOn [DecidableEq α] (r s : IExpr) : Bool :=
 
 end Alg
 
-/-- The three-element Kleene algebra `0 < ½ < 1` with `¬½ = ½`. It generates
-the variety of Kleene algebras (Kalman 1958), so it decides the equational
-theory of the free Kleene interval. -/
+/-- `0 < ½ < 1` with `¬½ = ½`; generates the variety of Kleene algebras
+(Kalman 1958). -/
 inductive K3 where
   | zero | half | one
   deriving Repr, DecidableEq
@@ -159,9 +150,8 @@ def kleene : Alg K3 where
   meet := K3.meet
   join := K3.join
 
-/-- The four-element De Morgan algebra: `0 < a, b < 1` with `a`, `b`
-incomparable and `¬` fixing both. It generates the variety of De Morgan
-algebras, so it decides the interval theory of stock CCHM. -/
+/-- `0 < a, b < 1`, `a` and `b` incomparable and fixed by `¬`; generates the
+variety of De Morgan algebras. -/
 inductive DM4 where
   | zero | a | b | one
   deriving Repr, DecidableEq
@@ -212,19 +202,13 @@ def boolean : Alg Bool where
   meet := and
   join := or
 
-/-! ## The interval used by the kernel
+/-! ## Normal forms
 
-Interval expressions in values are `IExpr`s over de Bruijn levels; the
-equational theory is the free Kleene algebra. -/
-
-/-! ### Normal forms
-
-A clause is a sorted list of literals `(i, d)`; a clause may contain both
-polarities of a generator, since `i ∧ ¬i ≠ 0` in a Kleene algebra. Constants
-are propagated and absorption (`x ∨ (x ∧ y) = x`) is applied, which is valid
-in any lattice, so the normal form is a De Morgan normal form: it decides
-`r = 0` and `r = 1` and gives the faces on which `r = 1`, but two Kleene-equal
-expressions may still have different normal forms. -/
+A clause is a sorted list of literals `(i, d)` and may contain both
+polarities, since `i ∧ ¬i ≠ 0`. Constants are propagated and absorption
+applied, which holds in any lattice, so the normal form decides `r = 0`
+and `r = 1` and gives the faces on which `r = 1`, but two Kleene-equal
+expressions may have different normal forms. -/
 
 abbrev Clause := List (Nat × Bool)
 
@@ -281,20 +265,17 @@ def norm (r : IExpr) : IExpr := ofClauses (dnf r false)
 def isZero (r : IExpr) : Bool := (dnf r false).isEmpty
 def isOne (r : IExpr) : Bool := (dnf r false).any (·.isEmpty)
 
-/-- ABCFHL validity: the cofibration `r = 1` holds classically, so no closed
-instance of a system on `r` can be empty. -/
+/-- ABCFHL validity: `r = 1` holds classically. -/
 def isValid (r : IExpr) : Bool := boolean.decEqOn r one
 
 end IExpr
 
-/-- Equality in the free Kleene interval: by normal form when possible,
-otherwise by evaluation into the three-element Kleene algebra. -/
+/-- Kleene equality: by normal form, else by evaluation into `K3`. -/
 def ieq (r s : IExpr) : Bool :=
   let (cr, cs) := (dnf r false, dnf s false)
   cr == cs || kleene.decEqOn (ofClauses cr) (ofClauses cs)
 
-/-- A face: a partial assignment of generators to endpoints, sorted by
-generator and without repetition. -/
+/-- A partial assignment of generators to endpoints, sorted, no repeats. -/
 abbrev Face := List (Nat × Bool)
 
 namespace Face
@@ -320,7 +301,7 @@ def meet (α β : Face) : Option Face :=
 def compatible (α β : Face) : Bool :=
   (α.meet β).isSome
 
-/-- `α ≤ β`: `α` is at least as specific as `β` (it fixes every generator `β` fixes, the same way). -/
+/-- `α` fixes every generator `β` fixes, the same way. -/
 def le (α β : Face) : Bool :=
   β.all fun (i, d) => α.lookup i == some d
 
@@ -343,13 +324,10 @@ def toIExpr (α : Face) : IExpr :=
 
 end Face
 
-/-- Keep only the maximal faces: drop any face that is at least as specific as
-another one in the list. -/
 def maximalFaces (fs : List Face) : List Face :=
   absorb fs
 
-/-- The maximal faces on which `r = b`: the consistent clauses of the normal
-form of `r` (of `¬r` for `b = false`); cubicaltt's `invFormula`. -/
+/-- The maximal faces on which `r = b`; cubicaltt's `invFormula`. -/
 def invFormula (r : IExpr) (b : Bool) : List Face :=
   (dnf r (!b)).filter Clause.consistent
 

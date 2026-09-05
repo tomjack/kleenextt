@@ -1,8 +1,6 @@
 import Kleenextt.Frontend
 
-/-! Object-language programs, written directly in this Lean file and checked by
-the Kleenextt elaborator when it is elaborated. Ported from elaboration-zoo
-02 and 04. -/
+/-! Ported from elaboration-zoo 02 and 04. -/
 
 namespace Kleenextt.Examples.ElabZoo
 
@@ -23,12 +21,11 @@ kdef id2 : {A : _} → A → A := λ {A} x => x
 kdef namedLam : {A B C : _} → A → B → C → A := λ {B := X} a b c => a
 #kconv id = id2
 
--- Insertion: `id` at an implicit type is eta-expanded to `λ {A} => id {A}`.
+-- `id` is eta-expanded to `λ {A} => id {A}`; an implicit lambda is not,
+-- unless applied explicitly.
 kdef insert : {A : _} → A → A := id
 #knf insert
--- No insertion when the term already is an implicit lambda.
 kdef noinsert : {A : Type} → A → A := λ {A} x => the A x
--- But an implicit lambda applied explicitly gets its implicit inserted.
 #knf (λ {A} x => the A x) Type
 
 -- Church booleans and lists, with inferred implicit arguments.
@@ -47,7 +44,6 @@ kdef compose : {A : _} {B : A → Type} {C : {a : A} → B a → Type}
   := λ f g a => f (g a)
 kdef composeExample : List Bool := compose (cons true) (cons false) nil
 
--- Church naturals: the standard evaluator stress test.
 kdef CNat : Type := (N : Type) → (N → N) → N → N
 kdef two : CNat := λ N s z => s (s z)
 kdef five : CNat := λ N s z => s (s (s (s (s z))))
@@ -74,12 +70,10 @@ kdef etaR : (A : Type) → (A → A) → A → A := λ A f x => f x
 #knf let f : CNat → CNat := λ n => add n two; f five
 kdef tit : Type := Type
 
--- Ill-typed programs are rejected.
 #kfail id id
 #kfail (λ A x => x) Type
 #kfail const {C := Type}
 #kfail the Bool Type
--- Unsolved metavariables are rejected too.
 #kfail λ x => x
 
 end Kleenextt.Examples.ElabZoo

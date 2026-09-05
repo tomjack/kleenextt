@@ -1,8 +1,7 @@
 namespace Kleenextt.Core
 
-/-! Evaluation counters, kept in a global reference and bumped from pure code
-through an opaque identity function, for the `#ktime` and `#ktrace`
-commands. -/
+/-! Evaluation counters in a global reference, bumped from pure code through
+an opaque identity. -/
 
 inductive Counter where
   /-- `hcomp'` past the total-face shortcut -/
@@ -97,7 +96,6 @@ initialize statsRef : IO.Ref Stats ← IO.mkRef Stats.empty
     statsRef.modify fun s => s.modify c.ctorIdx (· + 1)
     pure a
 
-/-- Count one event of kind `c` on the way to `a`. -/
 @[implemented_by tickUnsafe] def tick {α : Type} (_ : Counter) (a : α) : α := a
 
 @[noinline] unsafe def gaugeUnsafe {α : Type} (c : Counter) (n : Nat) (a : α) : α :=
@@ -105,13 +103,13 @@ initialize statsRef : IO.Ref Stats ← IO.mkRef Stats.empty
     statsRef.modify fun s => s.modify c.ctorIdx (max n)
     pure a
 
-/-- Record `n` under `c` if it exceeds the value there, on the way to `a`. -/
+/-- `max` into `c`. -/
 @[implemented_by gaugeUnsafe] def gauge {α : Type} (_ : Counter) (_ : Nat) (a : α) : α := a
 
 def Stats.reset : IO Unit := statsRef.set Stats.empty
 def Stats.read : IO Stats := statsRef.get
 
-/-- Resident set size in megabytes, from `/proc/self/statm`. -/
+/-- Resident set size in MB. -/
 def residentMB : IO Nat := do
   let s ← IO.FS.readFile "/proc/self/statm"
   match s.splitOn " " with

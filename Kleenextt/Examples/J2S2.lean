@@ -1,10 +1,7 @@
 import Kleenextt.Examples.S2Mod2
 
-/-! `Stuff/Pi3JS2/J2S2.agda`: the family over `J₂S²` into the universe
-with fibre `S¹ × ∥S²/2∥₂`, `global rotLoopsMod2` over `surf₁` and over
-`surf₂` the `2,2`-extension that `rotLoopsMod2Mod2` gives through
-`LocalGlobal`. Transport along it takes `π₃(J₂S²)` to `π₂∥S²/2∥₂`, then
-`Bool`; `bit` is the value on the Hopf generator `η surf₁`. -/
+/-! `Stuff/Pi3JS2/J2S2.agda`: the family over `J₂S²` with fibre
+`S¹ × ∥S²/2∥₂`; `bit` is its value on the Hopf generator `η surf₁`. -/
 
 namespace Kleenextt.Examples.J2S2
 
@@ -17,8 +14,7 @@ kdata J2S2 := jbase
 
 kdef globalRL : Ω2 Type PairT := global PairT rotLoops
 
--- `gnarly'`: `+EH⋆ ≡ -EH⋆` for `global rotLoops`, from `rotLoopsSq`
--- carried through `local`.
+-- `gnarly'`: `+EH⋆ ≡ -EH⋆` for `global rotLoops`, from `rotLoopsSq`.
 kdef gnarlyPath : Path (ext11 (Ω Type PairT) refl globalRL globalRL)
     (ehPlusStar Type PairT globalRL globalRL) (ehMinusStar Type PairT globalRL globalRL) :=
   let step : Path (ext11 (PairT → PairT) (λ x => x) (loc PairT globalRL) (loc PairT globalRL))

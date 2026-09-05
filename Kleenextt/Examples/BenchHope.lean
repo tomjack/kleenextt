@@ -1,10 +1,7 @@
 import Kleenextt.Examples.Hope
 
-/-! The expensive numbers: `lake build Kleenextt.Examples.BenchHope`. Both
-take a cube written directly as nested `hcomp`s with connections in the
-constructor arguments (the open `split` of such a cube has a 41 MB normal
-form, against 111 KB for `w22`). `brunerieW` is +2 in 33 s and 3.4 GB
-(1.06M `hcomp`s); `hope` is +1 in about eight minutes and 11 GB (5.8M). -/
+/-! Cubes written as nested `hcomp`s with connections. `brunerieW` is +2 in
+33 s and 3.4 GB; `hope` is +1 in about eight minutes and 11 GB. -/
 
 namespace Kleenextt.Examples.Brunerie
 
