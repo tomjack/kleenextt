@@ -69,19 +69,19 @@ end Expr
 namespace Cmd
 @[builtin_kcmd_parser] def moduleDoc := leading_parser "/-!" >> Command.commentBody
 @[builtin_kcmd_parser] def «import» := leading_parser "import " >> ident
-@[builtin_kcmd_parser] def kdef := leading_parser "kdef " >> ident >> " : " >> kexpr >> " := " >> kexpr
-@[builtin_kcmd_parser] def kdata := leading_parser "kdata " >> ident >> " := " >> sepBy kcon " | "
-@[builtin_kcmd_parser] def knf := leading_parser "#knf " >> kexpr
-@[builtin_kcmd_parser] def ktime := leading_parser "#ktime " >> kexpr
-@[builtin_kcmd_parser] def ktrace := leading_parser "#ktrace " >> kexpr
-@[builtin_kcmd_parser] def kterm := leading_parser "#kterm " >> kexpr
-@[builtin_kcmd_parser] def khead := leading_parser "#khead " >> numLit >> kexpr
-@[builtin_kcmd_parser] def koverlaps := leading_parser "#koverlaps " >> numLit >> kexpr
-@[builtin_kcmd_parser] def kstable := leading_parser "#kstable " >> numLit >> kexpr
-@[builtin_kcmd_parser] def ktype := leading_parser "#ktype " >> kexpr
-@[builtin_kcmd_parser] def kconv := leading_parser "#kconv " >> kexpr >> " = " >> kexpr
-@[builtin_kcmd_parser] def kdiffer := leading_parser "#kdiffer " >> kexpr >> " = " >> kexpr
-@[builtin_kcmd_parser] def kfail := leading_parser "#kfail " >> kexpr
+@[builtin_kcmd_parser] def «def» := leading_parser "def " >> ident >> " : " >> kexpr >> " := " >> kexpr
+@[builtin_kcmd_parser] def data := leading_parser "data " >> ident >> " := " >> sepBy kcon " | "
+@[builtin_kcmd_parser] def nf := leading_parser "#nf " >> kexpr
+@[builtin_kcmd_parser] def time := leading_parser "#time " >> kexpr
+@[builtin_kcmd_parser] def trace := leading_parser "#trace " >> kexpr
+@[builtin_kcmd_parser] def term := leading_parser "#term " >> kexpr
+@[builtin_kcmd_parser] def head := leading_parser "#head " >> numLit >> kexpr
+@[builtin_kcmd_parser] def overlaps := leading_parser "#overlaps " >> numLit >> kexpr
+@[builtin_kcmd_parser] def stable := leading_parser "#stable " >> numLit >> kexpr
+@[builtin_kcmd_parser] def type := leading_parser "#type " >> kexpr
+@[builtin_kcmd_parser] def conv := leading_parser "#conv " >> kexpr >> " = " >> kexpr
+@[builtin_kcmd_parser] def differ := leading_parser "#differ " >> kexpr >> " = " >> kexpr
+@[builtin_kcmd_parser] def fail := leading_parser "#fail " >> kexpr
 end Cmd
 
 end Kleenextt.Syntax

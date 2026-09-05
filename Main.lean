@@ -3,7 +3,7 @@ import Kleenextt.Frontend
 open Kleenextt.Frontend
 
 def usage : String :=
-  "usage: kleenextt check FILE...      check the files, running their #k commands\n" ++
+  "usage: kleenextt check FILE...      check the files, running their # commands\n" ++
   "       kleenextt nf FILE EXPR      normalize a name or expression in FILE's context"
 
 def run (env : Lean.Environment) : List String → IO UInt32

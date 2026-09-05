@@ -289,7 +289,7 @@ private def elabDef (st : KState) (x : Ident) (a t : TSyntax `kexpr) : IO KState
         let tm ← check cxt (← toRaw t) (eval G cxt.lvl [] cxt.env ty)
         pure (ty, tm) : ElabM (Tm × Tm)).run G
     pure (← zonk G cxt.env cxt.lvl ty, ← zonk G cxt.env cxt.lvl tm)
-  -- `KDEF_TRACE`: as `#ktrace`.
+  -- `KDEF_TRACE`: as `#trace`.
   let r ← if (← IO.getEnv "KDEF_TRACE").isNone then pure (r ()) else do
     let err ← IO.FS.Handle.mk ((← IO.getEnv "KTIME_LOG").getD "/dev/stderr") .append
     Stats.reset
@@ -342,7 +342,7 @@ private partial def headInfo (v : Val) (depth : Nat := 3) : String :=
 private def truncate (n : Nat) (s : String) : String :=
   if s.length > n then String.ofList (s.toList.take n) ++ "…" else s
 
-/-- The normal form of `e` and its type, as `#knf`. -/
+/-- The normal form of `e` and its type, as `#nf`. -/
 def normalize (st : KState) (e : TSyntax `kexpr) : IO String := do
   let (cxt, G) := st.cxt
   let (t, a, G) ← infoOf cxt G e
@@ -361,7 +361,7 @@ private def time (st : KState) (e : TSyntax `kexpr) : IO String := do
   let s ← Stats.read
   pure s!"eval {t1 - t0} ms, quote {t2 - t1} ms\n  {s.pretty}\n  {truncate 200 n}"
 
-/-- `#ktime`, sampling counters and resident size every two seconds through
+/-- `#time`, sampling counters and resident size every two seconds through
 a fresh stderr handle (or `KTIME_LOG`), since the elaborator captures the
 standard streams. -/
 private def trace (st : KState) (e : TSyntax `kexpr) : IO String := do
@@ -482,32 +482,32 @@ private def fails (st : KState) (e : TSyntax `kexpr) : IO Bool := do
 
 /-- Whether a command defines something; the others are diagnostics. -/
 def isDecl : Syntax → Bool
-  | `(kcmd| kdef $_ : $_ := $_) | `(kcmd| kdata $_ := $_|*) => true
+  | `(kcmd| def $_ : $_ := $_) | `(kcmd| data $_ := $_|*) => true
   | _ => false
 
 /-- Run a definition or diagnostic; `import` is the loader's. Returns the
 new state and the diagnostic's report, if any. -/
 def runCmd (st : KState) (cmd : Syntax) : IO (KState × Option String) := do
   match cmd with
-  | `(kcmd| kdef $x:ident : $a := $t) => pure (← elabDef st x a t, none)
-  | `(kcmd| kdata $x:ident := $cons|*) => pure (← elabData st x cons.getElems, none)
-  | `(kcmd| #knf $e) => pure (st, some (← normalize st e))
-  | `(kcmd| #ktime $e) => pure (st, some (← time st e))
-  | `(kcmd| #ktrace $e) => pure (st, some (← trace st e))
-  | `(kcmd| #kterm $e) => pure (st, some (← term st e))
-  | `(kcmd| #ktype $e) => pure (st, some (← type st e))
-  | `(kcmd| #khead $k:num $e) => pure (st, some (← head st k.getNat e))
-  | `(kcmd| #koverlaps $k:num $e) => pure (st, some (← overlaps st k.getNat e))
-  | `(kcmd| #kstable $k:num $e) => pure (st, some (← stable st k.getNat e))
-  | `(kcmd| #kconv $a = $b) =>
+  | `(kcmd| def $x:ident : $a := $t) => pure (← elabDef st x a t, none)
+  | `(kcmd| data $x:ident := $cons|*) => pure (← elabData st x cons.getElems, none)
+  | `(kcmd| #nf $e) => pure (st, some (← normalize st e))
+  | `(kcmd| #time $e) => pure (st, some (← time st e))
+  | `(kcmd| #trace $e) => pure (st, some (← trace st e))
+  | `(kcmd| #term $e) => pure (st, some (← term st e))
+  | `(kcmd| #type $e) => pure (st, some (← type st e))
+  | `(kcmd| #head $k:num $e) => pure (st, some (← head st k.getNat e))
+  | `(kcmd| #overlaps $k:num $e) => pure (st, some (← overlaps st k.getNat e))
+  | `(kcmd| #stable $k:num $e) => pure (st, some (← stable st k.getNat e))
+  | `(kcmd| #conv $a = $b) =>
     match ← convSides st a b with
     | none => pure (st, none)
     | some (na, nb) => throw (IO.userError s!"not convertible:\n  {na}\n  {nb}")
-  | `(kcmd| #kdiffer $a = $b) =>
+  | `(kcmd| #differ $a = $b) =>
     match ← convSides st a b with
     | some _ => pure (st, none)
     | none => throw (IO.userError "expected the sides to differ, but they are convertible")
-  | `(kcmd| #kfail $e) =>
+  | `(kcmd| #fail $e) =>
     if ← fails st e then pure (st, none)
     else throw (IO.userError "expected an elaboration error, but the term elaborated")
   | _ => throw (IO.userError s!"unsupported command: {cmd.getKind}")
@@ -545,7 +545,7 @@ private def report (ictx : Parser.InputContext) (stx : Syntax) (severity msg : S
   let out ← if severity == "error" then IO.getStderr else IO.getStdout
   out.putStrLn s!"{ictx.fileName}:{pos.line}:{pos.column}: {severity}: {msg}"
 
-/-- Check a file; with `diagnostics`, run its `#k…` commands too. Returns its
+/-- Check a file; with `diagnostics`, run its `#…` commands too. Returns its
 import closure, dependencies first, ending with the file itself. -/
 partial def loadFile (path : System.FilePath) (diagnostics : Bool) : LoaderM (Array KModule) := do
   let real := (← IO.FS.realPath path).toString

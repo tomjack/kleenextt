@@ -3,15 +3,15 @@ import S2Mod2
 /-! `Stuff/Pi3JS2/J2S2.agda`: the family over `J₂S²` with fibre
 `S¹ × ∥S²/2∥₂`; `bit` is its value on the Hopf generator `η surf₁`. -/
 
-kdata J2S2 := jbase
+data J2S2 := jbase
   | jsurf (i j : I) [ (i = 0) ↦ jbase, (i = 1) ↦ jbase, (j = 0) ↦ jbase, (j = 1) ↦ jbase ]
   | jsurfsurf (i j a b : I) [ (i = 0) ↦ jsurf a b, (i = 1) ↦ jsurf a b, (j = 0) ↦ jsurf a b, (j = 1) ↦ jsurf a b,
                               (a = 0) ↦ jsurf i j, (a = 1) ↦ jsurf i j, (b = 0) ↦ jsurf i j, (b = 1) ↦ jsurf i j ]
 
-kdef globalRL : Ω2 Type PairT := global PairT rotLoops
+def globalRL : Ω2 Type PairT := global PairT rotLoops
 
 -- `gnarly'`: `+EH⋆ ≡ -EH⋆` for `global rotLoops`, from `rotLoopsSq`.
-kdef gnarlyPath : Path (ext11 (Ω Type PairT) refl globalRL globalRL)
+def gnarlyPath : Path (ext11 (Ω Type PairT) refl globalRL globalRL)
     (ehPlusStar Type PairT globalRL globalRL) (ehMinusStar Type PairT globalRL globalRL) :=
   let step : Path (ext11 (PairT → PairT) (λ x => x) (loc PairT globalRL) (loc PairT globalRL))
       (naturalComm PairT (loc PairT globalRL) (loc PairT globalRL))
@@ -23,18 +23,18 @@ kdef gnarlyPath : Path (ext11 (Ω Type PairT) refl globalRL globalRL)
       rotLoopsSq;
   globalCommEq PairT globalRL globalRL (ehPlusStar Type PairT globalRL globalRL) (ehMinusStar Type PairT globalRL globalRL)
     (pcomp (localCommPlusEH PairT globalRL globalRL) (pcomp step (sym (localCommMinusEH PairT globalRL globalRL))))
-kdef gnarly : ext22 Type PairT globalRL globalRL := extFromPath Type PairT globalRL globalRL gnarlyPath
+def gnarly : ext22 Type PairT globalRL globalRL := extFromPath Type PairT globalRL globalRL gnarlyPath
 
-kdef funP : J2S2 → Type := λ x => case x (λ _ => Type)
+def funP : J2S2 → Type := λ x => case x (λ _ => Type)
   [ jbase ↦ PairT, jsurf i j ↦ globalRL i j, jsurfsurf i j a b ↦ gnarly i j a b ]
-kdef fun1 : Ω J2S2 jbase → PairT := λ p => transport (λ i => funP (p i)) (tbase, sbase)
-kdef fun2 : Ω3 J2S2 jbase → Ω2 S2m2 sbase := λ p => λ i j => snd (fun1 (λ k => p i j k))
-kdef bit3 : Ω3 J2S2 jbase → Bool := λ p => bit2 (fun2 p)
-kdef gen : Ω3 J2S2 jbase := eta J2S2 jbase (λ i j => jsurf i j)
-kdef bitJ : Bool := bit3 gen
+def fun1 : Ω J2S2 jbase → PairT := λ p => transport (λ i => funP (p i)) (tbase, sbase)
+def fun2 : Ω3 J2S2 jbase → Ω2 S2m2 sbase := λ p => λ i j => snd (fun1 (λ k => p i j k))
+def bit3 : Ω3 J2S2 jbase → Bool := λ p => bit2 (fun2 p)
+def gen : Ω3 J2S2 jbase := eta J2S2 jbase (λ i j => jsurf i j)
+def bitJ : Bool := bit3 gen
 
-#ktime bitJ
-#kconv bitJ = true
-#kconv bit3 (eta J2S2 jbase (λ i j => jsurf j i)) = true
-#kconv bit3 (λ i j k => jbase) = false
-#kconv bit3 (pcomp gen gen) = false
+#time bitJ
+#conv bitJ = true
+#conv bit3 (eta J2S2 jbase (λ i j => jsurf j i)) = true
+#conv bit3 (λ i j k => jbase) = false
+#conv bit3 (pcomp gen gen) = false

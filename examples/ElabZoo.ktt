@@ -2,73 +2,73 @@
 /-! Ported from elaboration-zoo 02 and 04. -/
 
 -- Implicit lambdas are inserted; implicit argument types may be holes.
-kdef id : {A : Type} → A → A := λ x => x
-kdef const : {A B : _} → A → B → A := λ x y => x
-kdef the : (A : _) → A → A := λ _ x => x
+def id : {A : Type} → A → A := λ x => x
+def const : {A B : _} → A → B → A := λ x y => x
+def the : (A : _) → A → A := λ _ x => x
 
-#knf id
-#ktype const
+#nf id
+#type const
 
 -- Implicit arguments given explicitly, positionally or by name.
-#knf const {Type} {Type} Type
-#knf const {B := Type} Type
+#nf const {Type} {Type} Type
+#nf const {B := Type} Type
 
 -- Explicit and named implicit lambdas.
-kdef id2 : {A : _} → A → A := λ {A} x => x
-kdef namedLam : {A B C : _} → A → B → C → A := λ {B := X} a b c => a
-#kconv id = id2
+def id2 : {A : _} → A → A := λ {A} x => x
+def namedLam : {A B C : _} → A → B → C → A := λ {B := X} a b c => a
+#conv id = id2
 
 -- `id` is eta-expanded to `λ {A} => id {A}`; an implicit lambda is not,
 -- unless applied explicitly.
-kdef insert : {A : _} → A → A := id
-#knf insert
-kdef noinsert : {A : Type} → A → A := λ {A} x => the A x
-#knf (λ {A} x => the A x) Type
+def insert : {A : _} → A → A := id
+#nf insert
+def noinsert : {A : Type} → A → A := λ {A} x => the A x
+#nf (λ {A} x => the A x) Type
 
 -- Church booleans and lists, with inferred implicit arguments.
-kdef Bool : Type := (B : _) → B → B → B
-kdef true : Bool := λ B t f => t
-kdef false : Bool := λ B t f => f
-kdef List : Type → Type := λ A => (L : _) → (A → L → L) → L → L
-kdef nil : {A : _} → List A := λ L cons nil => nil
-kdef cons : {A : _} → A → List A → List A := λ x xs L cons nil => cons x (xs L cons nil)
-kdef map : {A B : _} → (A → B) → List A → List B := λ {A} {B} f xs L c n => xs L (λ a => c (f a)) n
-kdef list1 : List Bool := cons true (cons false (cons true nil))
+def Bool : Type := (B : _) → B → B → B
+def true : Bool := λ B t f => t
+def false : Bool := λ B t f => f
+def List : Type → Type := λ A => (L : _) → (A → L → L) → L → L
+def nil : {A : _} → List A := λ L cons nil => nil
+def cons : {A : _} → A → List A → List A := λ x xs L cons nil => cons x (xs L cons nil)
+def map : {A B : _} → (A → B) → List A → List B := λ {A} {B} f xs L c n => xs L (λ a => c (f a)) n
+def list1 : List Bool := cons true (cons false (cons true nil))
 
 -- Dependent composition with higher-rank implicit function types.
-kdef compose : {A : _} {B : A → Type} {C : {a : A} → B a → Type}
+def compose : {A : _} {B : A → Type} {C : {a : A} → B a → Type}
   (f : {a : A} (b : B a) → C b) (g : (a : A) → B a) (a : A) → C (g a)
   := λ f g a => f (g a)
-kdef composeExample : List Bool := compose (cons true) (cons false) nil
+def composeExample : List Bool := compose (cons true) (cons false) nil
 
-kdef CNat : Type := (N : Type) → (N → N) → N → N
-kdef two : CNat := λ N s z => s (s z)
-kdef five : CNat := λ N s z => s (s (s (s (s z))))
-kdef add : CNat → CNat → CNat := λ a b N s z => a N s (b N s z)
-kdef mul : CNat → CNat → CNat := λ a b N s z => a _ (b _ s) z
-kdef ten : CNat := add five five
-kdef hundred : CNat := mul ten ten
+def CNat : Type := (N : Type) → (N → N) → N → N
+def two : CNat := λ N s z => s (s z)
+def five : CNat := λ N s z => s (s (s (s (s z))))
+def add : CNat → CNat → CNat := λ a b N s z => a N s (b N s z)
+def mul : CNat → CNat → CNat := λ a b N s z => a _ (b _ s) z
+def ten : CNat := add five five
+def hundred : CNat := mul ten ten
 
-#kconv add ten ten = mul two ten
-#kconv mul ten hundred = mul hundred ten
+#conv add ten ten = mul two ten
+#conv mul ten hundred = mul hundred ten
 
 -- Leibniz equality, with metavariables solved by unification.
-kdef Eq : {A : _} → A → A → Type := λ {A} x y => (P : A → Type) → P x → P y
-kdef refl : {A : _} {x : A} → Eq x x := λ _ px => px
-kdef sym : {A x y : _} → Eq {A} x y → Eq y x := λ {A} {x} {y} p => p (λ y => Eq y x) refl
-kdef tenTen : Eq (mul ten ten) hundred := refl
+def Eq : {A : _} → A → A → Type := λ {A} x y => (P : A → Type) → P x → P y
+def refl : {A : _} {x : A} → Eq x x := λ _ px => px
+def sym : {A x y : _} → Eq {A} x y → Eq y x := λ {A} {x} {y} p => p (λ y => Eq y x) refl
+def tenTen : Eq (mul ten ten) hundred := refl
 
 -- Eta: a bare neutral against its expansion.
-kdef etaL : (A : Type) → (A → A) → A → A := λ A f => f
-kdef etaR : (A : Type) → (A → A) → A → A := λ A f x => f x
-#kconv etaL = etaR
+def etaL : (A : Type) → (A → A) → A → A := λ A f => f
+def etaR : (A : Type) → (A → A) → A → A := λ A f x => f x
+#conv etaL = etaR
 
 -- let, and type-in-type.
-#knf let f : CNat → CNat := λ n => add n two; f five
-kdef tit : Type := Type
+#nf let f : CNat → CNat := λ n => add n two; f five
+def tit : Type := Type
 
-#kfail id id
-#kfail (λ A x => x) Type
-#kfail const {C := Type}
-#kfail the Bool Type
-#kfail λ x => x
+#fail id id
+#fail (λ A x => x) Type
+#fail const {C := Type}
+#fail the Bool Type
+#fail λ x => x

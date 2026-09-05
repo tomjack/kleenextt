@@ -4,9 +4,9 @@ import Brunerie
 `brunerieW`, the cubes as nested `hcomp`s with connections: 30 s and 1.9 GB
 where `brunerie` takes under a second. -/
 
-#ktime windingS1 (λ i => loop i)
-#ktime windingS2 (λ i j => loop2 i j)
-#ktime λ (i j : I) => split (λ k => w22 i j k)
-#ktime writhe (λ i j k => base2)
+#time windingS1 (λ i => loop i)
+#time windingS2 (λ i j => loop2 i j)
+#time λ (i j : I) => split (λ k => w22 i j k)
+#time writhe (λ i j k => base2)
 
-#kconv brunerieW = pos (suc (suc zero))
+#conv brunerieW = pos (suc (suc zero))

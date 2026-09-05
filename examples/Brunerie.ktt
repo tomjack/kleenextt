@@ -3,26 +3,26 @@ import Prelude
 /-! cctt's `tests/brunerie_james_revised.cctt` up to `brunerie`, in CCHM
 style after cubicaltt's `examples/brunerie_james.ctt`. -/
 
-kdata Nat := zero | suc (n : Nat)
-kdata Int := pos (n : Nat) | neg (n : Nat)
-kdata S2 := base2 | loop2 (i j : I) [ (i = 0) ↦ base2, (i = 1) ↦ base2, (j = 0) ↦ base2, (j = 1) ↦ base2 ]
+data Nat := zero | suc (n : Nat)
+data Int := pos (n : Nat) | neg (n : Nat)
+data S2 := base2 | loop2 (i j : I) [ (i = 0) ↦ base2, (i = 1) ↦ base2, (j = 0) ↦ base2, (j = 1) ↦ base2 ]
 
-kdef Ω : (A : Type) → A → Type := λ A x => Path A x x
-kdef Ω2 : (A : Type) → A → Type := λ A x => Ω (Ω A x) refl
-kdef Ω3 : (A : Type) → A → Type := λ A x => Ω (Ω2 A x) refl
+def Ω : (A : Type) → A → Type := λ A x => Path A x x
+def Ω2 : (A : Type) → A → Type := λ A x => Ω (Ω A x) refl
+def Ω3 : (A : Type) → A → Type := λ A x => Ω (Ω2 A x) refl
 
-kdef isProp : Type → Type := λ A => (a b : A) → Path A a b
+def isProp : Type → Type := λ A => (a b : A) → Path A a b
 
-kdef J : {A : Type} {a : A} (C : (x : A) → Path A a x → Type) (d : C a refl) {x : A} (p : Path A a x) → C x p :=
+def J : {A : Type} {a : A} (C : (x : A) → Path A a x → Type) (d : C a refl) {x : A} (p : Path A a x) → C x p :=
   λ {A} {a} C d {x} p => transp (λ i => C (p i) (λ j => p (i ∧ j))) 0 d
 
 -- Cubical Agda's `isoToIsEquiv`, fibers oriented `Path B y (f x)`.
 
-kdef isIso : (A B : Type) (f : A → B) → Type :=
+def isIso : (A B : Type) (f : A → B) → Type :=
   λ A B f => (g : B → A) × ((x : A) → Path A (g (f x)) x) × ((x : B) → Path B (f (g x)) x)
-kdef iso : Type → Type → Type := λ A B => (f : A → B) × isIso A B f
+def iso : Type → Type → Type := λ A B => (f : A → B) × isIso A B f
 
-kdef isoToEquiv : (A B : Type) → iso A B → Equiv A B :=
+def isoToEquiv : (A B : Type) → iso A B → Equiv A B :=
   λ A B is =>
   let f : A → B := fst is;
   let g : B → A := fst (snd is);
@@ -44,35 +44,35 @@ kdef isoToEquiv : (A B : Type) → iso A B → Equiv A B :=
         hcomp B (λ k => [ (i = 1) ↦ s (p1 (¬ j)) k, (i = 0) ↦ s (p0 (¬ j)) k, (j = 1) ↦ s (f (p i)) k, (j = 0) ↦ s y k ]) (f (sq i j));
       λ i => (p i, λ j => sq1 i j)))
 
-kdef predInt : Int → Int := λ x => case x (λ _ => Int)
+def predInt : Int → Int := λ x => case x (λ _ => Int)
   [ pos u ↦ case u (λ _ => Int) [ zero ↦ neg zero, suc n ↦ pos n ], neg v ↦ neg (suc v) ]
-kdef sucInt : Int → Int := λ x => case x (λ _ => Int)
+def sucInt : Int → Int := λ x => case x (λ _ => Int)
   [ pos u ↦ pos (suc u), neg v ↦ case v (λ _ => Int) [ zero ↦ pos zero, suc n ↦ neg n ] ]
-kdef predsucInt : (x : Int) → Path Int (predInt (sucInt x)) x :=
+def predsucInt : (x : Int) → Path Int (predInt (sucInt x)) x :=
   λ x => case x (λ x => Path Int (predInt (sucInt x)) x)
     [ pos u ↦ refl, neg v ↦ case v (λ v => Path Int (predInt (sucInt (neg v))) (neg v)) [ zero ↦ refl, suc n ↦ refl ] ]
-kdef sucpredInt : (x : Int) → Path Int (sucInt (predInt x)) x :=
+def sucpredInt : (x : Int) → Path Int (sucInt (predInt x)) x :=
   λ x => case x (λ x => Path Int (sucInt (predInt x)) x)
     [ pos u ↦ case u (λ u => Path Int (sucInt (predInt (pos u))) (pos u)) [ zero ↦ refl, suc n ↦ refl ], neg v ↦ refl ]
 
-kdef sucIntIso : iso Int Int := (sucInt, predInt, predsucInt, sucpredInt)
-kdef sucPathInt : Path Type Int Int := ua (isoToEquiv Int Int sucIntIso)
+def sucIntIso : iso Int Int := (sucInt, predInt, predsucInt, sucpredInt)
+def sucPathInt : Path Type Int Int := ua (isoToEquiv Int Int sucIntIso)
 
-kdef helix : S1 → Type := λ x => case x (λ _ => Type) [ base ↦ Int, loop i ↦ sucPathInt i ]
-kdef windingS1 : Ω S1 base → Int := λ p => transp (λ i => helix (p i)) 0 (pos zero)
+def helix : S1 → Type := λ x => case x (λ _ => Type) [ base ↦ Int, loop i ↦ sucPathInt i ]
+def windingS1 : Ω S1 base → Int := λ p => transp (λ i => helix (p i)) 0 (pos zero)
 
-#kconv windingS1 (λ i => loop i) = pos (suc zero)
-#kconv windingS1 (λ i => loop (¬ i)) = neg zero
-#kconv windingS1 (pcomp (λ i => loop i) (λ i => loop i)) = pos (suc (suc zero))
+#conv windingS1 (λ i => loop i) = pos (suc zero)
+#conv windingS1 (λ i => loop (¬ i)) = neg zero
+#conv windingS1 (pcomp (λ i => loop i) (λ i => loop i)) = pos (suc (suc zero))
 
-kdef constSquare : (A : Type) (a : A) (p : Path A a a) → PathP (λ i => Path A (p i) (p i)) p p :=
+def constSquare : (A : Type) (a : A) (p : Path A a a) → PathP (λ i => Path A (p i) (p i)) p p :=
   λ A a p i j => hcomp A (λ k => [ (i = 0) ↦ p (j ∨ ¬ k), (i = 1) ↦ p (j ∧ k), (j = 0) ↦ p (i ∨ ¬ k), (j = 1) ↦ p (i ∧ k) ]) a
 
-kdef rotLoop : (a : S1) → Path S1 a a := λ a => case a (λ a => Path S1 a a)
+def rotLoop : (a : S1) → Path S1 a a := λ a => case a (λ a => Path S1 a a)
   [ base ↦ λ i => loop i, loop i ↦ λ j => constSquare S1 base (λ i => loop i) i j ]
 
 -- cubicaltt's `propIsEquivDirect` (`examples/equiv.ctt`).
-kdef propIsEquivDirect : (A B : Type) (f : A → B) → isProp (isEquiv f) := λ A B f p q i y =>
+def propIsEquivDirect : (A B : Type) (f : A → B) → isProp (isEquiv f) := λ A B f p q i y =>
   let F : Type := fiber f y;
   let p2 : (w : F) → Path F (fst (p y)) w := snd (p y);
   let q2 : (w : F) → Path F (fst (q y)) w := snd (q y);
@@ -80,11 +80,11 @@ kdef propIsEquivDirect : (A B : Type) (f : A → B) → isProp (isEquiv f) := λ
    λ w j => hcomp F (λ k => [ (i = 0) ↦ p2 w j, (i = 1) ↦ q2 w (j ∨ ¬ k), (j = 0) ↦ p2 (q2 w (¬ k)) i, (j = 1) ↦ w ])
               (p2 w (i ∨ j)))
 
-kdef Z : Type → Type := λ A => Ω (A → A) (λ x => x)
+def Z : Type → Type := λ A => Ω (A → A) (λ x => x)
 
 -- `anyRotIsEquiv` of brunerie_james.ctt: corrected at `i = 1` by the
 -- contraction onto `idIsEquiv`.
-kdef rotIsEquiv : (A : Type) (h : Z A) (i : I) → isEquiv (λ x => h i x) :=
+def rotIsEquiv : (A : Type) (h : Z A) (i : I) → isEquiv (λ x => h i x) :=
   λ A h i =>
     hcomp (isEquiv (λ x => h i x))
       (λ k => [ (i = 0) ↦ snd (idEquiv A),
@@ -92,64 +92,64 @@ kdef rotIsEquiv : (A : Type) (h : Z A) (i : I) → isEquiv (λ x => h i x) :=
                             (transp (λ i => isEquiv (λ x => h i x)) 0 (snd (idEquiv A))) (¬ k) ])
       (transp (λ j => isEquiv (λ x => h (i ∧ j) x)) (¬ i) (snd (idEquiv A)))
 
-kdef rotEquiv : (A : Type) (h : Z A) → Path (Equiv A A) (idEquiv A) (idEquiv A) :=
+def rotEquiv : (A : Type) (h : Z A) → Path (Equiv A A) (idEquiv A) (idEquiv A) :=
   λ A h i => (λ x => h i x, rotIsEquiv A h i)
 
-kdef global : (A : Type) (h : Z A) → Ω2 Type A :=
+def global : (A : Type) (h : Z A) → Ω2 Type A :=
   λ A h i j => Glue A [ (i = 0) ↦ (A, idEquiv A), (i = 1) ↦ (A, idEquiv A),
                         (j = 0) ↦ (A, rotEquiv A h i), (j = 1) ↦ (A, idEquiv A) ]
 
-kdef globalS2 : (A : Type) (h : Z A) → S2 → Type :=
+def globalS2 : (A : Type) (h : Z A) → S2 → Type :=
   λ A h x => case x (λ _ => Type) [ base2 ↦ A, loop2 i j ↦ global A h i j ]
 
-kdef ΩS2 : Type := Ω S2 base2
+def ΩS2 : Type := Ω S2 base2
 
-kdef recΩS2 : (A : Type) (x : A) (h : Z A) → ΩS2 → A :=
+def recΩS2 : (A : Type) (x : A) (h : Z A) → ΩS2 → A :=
   λ A x h p => transp (λ i => globalS2 A h (p i)) 0 x
 
-kdef windingS2 : Ω2 S2 base2 → Int :=
+def windingS2 : Ω2 S2 base2 → Int :=
   λ p => windingS1 (λ i => recΩS2 S1 base (λ i x => rotLoop x i) (p i))
 
-#kconv windingS2 (λ i j => loop2 i j) = pos (suc zero)
+#conv windingS2 (λ i j => loop2 i j) = pos (suc zero)
 
 -- The Whitehead product `[loop2, loop2]`.
-kdef w22' : Ω (Ω2 S2 base2) (λ a b => loop2 a b) :=
+def w22' : Ω (Ω2 S2 base2) (λ a b => loop2 a b) :=
   λ j a b => hcomp S2 (λ i => [ (j = 0) ↦ loop2 a b, (j = 1) ↦ loop2 a b, (a = 0) ↦ loop2 i j, (a = 1) ↦ loop2 i j,
                                 (b = 0) ↦ loop2 i j, (b = 1) ↦ loop2 i j ]) (loop2 a b)
 
-kdef dsqInv : (A : Type) (x y : A) (p : Path A x y) (r : Path (Path A x y) p p) → Ω2 A x :=
+def dsqInv : (A : Type) (x y : A) (p : Path A x y) (r : Path (Path A x y) p p) → Ω2 A x :=
   λ A x y p r => J (λ y p => Path (Path A x y) p p → Ω2 A x) (λ r => r) p r
 
-kdef w22 : Ω3 S2 base2 := dsqInv ΩS2 refl refl (λ i j => loop2 i j) w22'
+def w22 : Ω3 S2 base2 := dsqInv ΩS2 refl refl (λ i j => loop2 i j) w22'
 
 -- The 2-truncation is cheated, as in the original.
-kdef tr2S2 : Type := S2
+def tr2S2 : Type := S2
 
-kdef cheating : (y : tr2S2) → Ω2 tr2S2 y :=
+def cheating : (y : tr2S2) → Ω2 tr2S2 y :=
   λ y => case y (λ y => Ω2 S2 y) [ base2 ↦ λ i j => loop2 i j, loop2 i j ↦ sorry ]
 
-kdef direct2 : S1 → (y : tr2S2) → Ω tr2S2 y :=
+def direct2 : S1 → (y : tr2S2) → Ω tr2S2 y :=
   λ x => case x (λ _ => (y : tr2S2) → Ω tr2S2 y) [ base ↦ λ y => refl, loop i ↦ λ y => cheating y i ]
 
-kdef direct : Z (S1 × tr2S2) := λ i x => (rotLoop (fst x) i, direct2 (fst x) (snd x) i)
+def direct : Z (S1 × tr2S2) := λ i x => (rotLoop (fst x) i, direct2 (fst x) (snd x) i)
 
-kdef split : ΩS2 → S1 × tr2S2 := recΩS2 (S1 × tr2S2) (base, base2) direct
+def split : ΩS2 → S1 × tr2S2 := recΩS2 (S1 × tr2S2) (base, base2) direct
 
-kdef writhe : Ω3 S2 base2 → Int := λ p => windingS2 (λ i j => snd (split (λ k => p i j k)))
+def writhe : Ω3 S2 base2 → Int := λ p => windingS2 (λ i j => snd (split (λ k => p i j k)))
 
-kdef brunerie : Int := writhe w22
+def brunerie : Int := writhe w22
 
 -- ±2; the sign depends on the orientation conventions.
-#kconv brunerie = pos (suc (suc zero))
+#conv brunerie = pos (suc (suc zero))
 
 -- `W₂₂'` of tomjack/cubical `Stuff/Pi3JS2/WhiteheadProduct.agda`.
-kdef W22 : (A : Type) (x : A) (α β : Ω2 A x) → Ω3 A x :=
+def W22 : (A : Type) (x : A) (α β : Ω2 A x) → Ω3 A x :=
   λ A x α β i j k =>
     hcomp A (λ l => [ (i = 0) ↦ β j (l ∨ k), (i = 1) ↦ β j (l ∨ k), (j = 0) ↦ α i (¬ l ∧ k), (j = 1) ↦ α i (¬ l ∧ k),
                       (k = 0) ↦ β j l, (k = 1) ↦ α i (¬ l) ])
       (hcomp A (λ l => [ (i = 0) ↦ β j (l ∧ k), (i = 1) ↦ β j (l ∧ k), (j = 0) ↦ α i (¬ l ∨ k), (j = 1) ↦ α i (¬ l ∨ k),
                          (k = 0) ↦ α i (¬ l), (k = 1) ↦ β j l ]) x)
 
-kdef brunerieW : Int := writhe (W22 S2 base2 (λ i j => loop2 i j) (λ i j => loop2 i j))
+def brunerieW : Int := writhe (W22 S2 base2 (λ i j => loop2 i j) (λ i j => loop2 i j))
 
-#kconv brunerie = pos (suc (suc zero))
+#conv brunerie = pos (suc (suc zero))

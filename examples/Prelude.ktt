@@ -1,33 +1,33 @@
 
 /-! Paths, transport, `ua`, and CCHM §7.1's equivalence of a line of types. -/
 
-kdata Bool := true | false
-kdata S1 := base | loop (i : I) [ (i = 0) ↦ base, (i = 1) ↦ base ]
+data Bool := true | false
+data S1 := base | loop (i : I) [ (i = 0) ↦ base, (i = 1) ↦ base ]
 
-kdef refl : {A : Type} {x : A} → Path A x x := λ {A} {x} i => x
-kdef sym : {A : Type} {x y : A} → Path A x y → Path A y x := λ p i => p (¬ i)
-kdef ap : {A B : Type} (f : A → B) {x y : A} → Path A x y → Path B (f x) (f y) := λ f p i => f (p i)
-kdef pcomp : {A : Type} {x y z : A} → Path A x y → Path A y z → Path A x z :=
+def refl : {A : Type} {x : A} → Path A x x := λ {A} {x} i => x
+def sym : {A : Type} {x y : A} → Path A x y → Path A y x := λ p i => p (¬ i)
+def ap : {A B : Type} (f : A → B) {x y : A} → Path A x y → Path B (f x) (f y) := λ f p i => f (p i)
+def pcomp : {A : Type} {x y z : A} → Path A x y → Path A y z → Path A x z :=
   λ {A} {x} p q i => hcomp A (λ j => [ (i = 0) ↦ x, (i = 1) ↦ q j ]) (p i)
 
-kdef transport : {A B : Type} → Path Type A B → A → B := λ p a => transp (λ i => p i) 0 a
-kdef transportRefl : {A : Type} (x : A) → Path A (transport (λ _ => A) x) x :=
+def transport : {A B : Type} → Path Type A B → A → B := λ p a => transp (λ i => p i) 0 a
+def transportRefl : {A : Type} (x : A) → Path A (transport (λ _ => A) x) x :=
   λ {A} x i => transp (λ _ => A) i x
 
 -- CCHM Example 4.
-kdef idEquiv : (A : Type) → Equiv A A :=
+def idEquiv : (A : Type) → Equiv A A :=
   λ A => (λ x => x, λ y => ((y, λ _ => y), λ z i => (snd z i, λ j => snd z (i ∧ j))))
 
-kdef ua : {A B : Type} → Equiv A B → Path Type A B :=
+def ua : {A B : Type} → Equiv A B → Path Type A B :=
   λ {A} {B} e i => Glue B [ (i = 0) ↦ (A, e), (i = 1) ↦ (B, idEquiv B) ]
 
 -- Up to a trivial transport (agda/agda#3415).
-kdef uaβ : {A B : Type} (e : Equiv A B) (x : A) → Path B (transport (ua e) x) (fst e x) :=
+def uaβ : {A B : Type} (e : Equiv A B) (x : A) → Path B (transport (ua e) x) (fst e x) :=
   λ {A} {B} e x i => transp (λ _ => B) i (fst e x)
 
 -- CCHM §7.1, `eq^i E : Equiv (E 0) (E 1)`.
 
-kdef lineToEquivFwd : (E : I → Type) → Equiv (E 0) (E 1) := λ E =>
+def lineToEquivFwd : (E : I → Type) → Equiv (E 0) (E 1) := λ E =>
   let f : E 0 → E 1 := λ x => transp (λ i => E i) 0 x;
   let g : E 1 → E 0 := λ y => transp (λ i => E (¬ i)) 0 y;
   let u : (x : E 0) (i : I) → E i := λ x i => transp (λ j => E (i ∧ j)) (¬ i) x;
@@ -47,4 +47,4 @@ kdef lineToEquivFwd : (E : I → Type) → Equiv (E 0) (E 1) := λ E =>
            (λ i => [ (k = 0) ↦ θ0 i j, (k = 1) ↦ θ1 i j, (j = 0) ↦ v y i, (j = 1) ↦ u (ω k) i ])
            (ω (j ∧ k)))))
 
-kdef lineToEquiv : (E : I → Type) → Equiv (E 1) (E 0) := λ E => lineToEquivFwd (λ i => E (¬ i))
+def lineToEquiv : (E : I → Type) → Equiv (E 1) (E 0) := λ E => lineToEquivFwd (λ i => E (¬ i))
