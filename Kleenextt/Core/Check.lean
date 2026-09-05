@@ -1,13 +1,9 @@
 import Kleenextt.Core.Unify
 
-/-! Bidirectional elaboration with implicit arguments, after elaboration-zoo 04:
-implicit applications are inserted when an inferred type is an implicit Pi
-(unless the term is an implicit lambda), and implicit lambdas are inserted
-when checking against an implicit Pi. Cubical forms are elaborated by
-restricting the context to each face of a cofibration. Metavariables and
-builtins live in a `Globals` record passed explicitly rather than in a
-global ref; each top-level definition is zonked and must leave no unsolved
-metavariables. -/
+/-! Bidirectional elaboration with implicit arguments, after elaboration-zoo
+04. Cubical forms are elaborated by restricting the context to each face of
+a cofibration. Each top-level definition is zonked and must leave no
+unsolved metavariables. -/
 
 namespace Kleenextt.Core
 

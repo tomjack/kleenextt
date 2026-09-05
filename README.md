@@ -11,48 +11,32 @@ univalence axiom", 2016. arXiv:1611.02108
 
 ## Building and testing
 
-`lake build` checks everything in the default target. The object-level
-tests are the `#kconv`, `#kdiffer` and `#kfail` commands, which fail the
-build when they fail. The library is precompiled (`precompileModules`), so
-the evaluator runs natively rather than in Lean's interpreter, which is ten
-times slower; running `lean` on a file by hand needs the `--load-dynlib`
-flags that `lake build` passes.
+`lake build` checks everything in the default target; `#kconv`, `#kdiffer`
+and `#kfail` fail the build when they fail. The library is precompiled, so
+the evaluator runs natively, ten times faster than in the interpreter;
+running `lean` by hand needs the `--load-dynlib` flags `lake build` passes.
 
-`#ktime e` normalises `e` and reports the time of evaluation and quotation,
-the counters of `Core/Stats.lean` and the start of the normal form.
-`#ktrace` also prints the counters and resident size every two seconds
-(`KDEF_TRACE=1` does the same for every `kdef`). `#khead`, `#kstable` and
-`#koverlaps` inspect a value's head, its stability under substitution, and
-the system invariant of an `hcomp`.
+`#ktime e` normalises `e` and reports timings, the counters of
+`Core/Stats.lean` and the start of the normal form; `#ktrace` (and
+`KDEF_TRACE=1` for every `kdef`) also samples the counters and resident
+size every two seconds. `#khead`, `#kstable` and `#koverlaps` are
+diagnostics for a value's head, its stability under substitution, and the
+system invariant of an `hcomp`.
 
-Outside the default build: `lake build Kleenextt.Examples.Bench` (and
-`BenchDeep`, `BenchBrunerie`) is the ladder towards the Brunerie number;
-`Hope` and `BenchHope` continue cctt's file towards π₄(S³); `Pi4S3` proves
-π₄(S³) nontrivial.
+Outside the default build: `Examples/Bench*.lean` (the ladder to the
+Brunerie number), `Hope` and `BenchHope` (cctt's file towards π₄(S³)), and
+`Pi4S3`.
 
 ## Layout
 
 - `Core/Interval.lean`: interval expressions, faces, and the decision
-  procedure for the free Kleene and De Morgan intervals, by evaluation into
-  the finite algebra generating the variety. `Core/Tests.lean` pins the
-  expected (in)equations at compile time.
-- `Core/Syntax.lean`: surface (`Raw`) and core (`Tm`) terms.
-- `Core/Eval.lean`: the semantic domain and the computation rules.
-- `Core/Unify.lean`, `Core/Check.lean`: pattern unification and
-  bidirectional elaboration with implicit arguments, after
-  elaboration-zoo 04.
+  procedure for the free Kleene and De Morgan intervals; `Core/Tests.lean`
+  pins the expected (in)equations.
+- `Core/Syntax.lean`, `Core/Eval.lean`, `Core/Unify.lean`,
+  `Core/Check.lean`: terms, the semantic domain and computation rules,
+  pattern unification, bidirectional elaboration (after elaboration-zoo 04).
 - `Core/Defun.lean`: the `defun` command deriving closures from their use
-  sites; `Core/DefunTest.lean` exercises it on a toy domain.
-- `Core/Stats.lean`: evaluation counters.
-- `Frontend.lean`: Lean as the surface language. A `kexpr` syntax category
-  of existing Lean tokens and the commands `kdef`, `kdata`, `#knf`,
-  `#ktype`, `#kconv`, `#kdiffer`, `#kfail`, which run the elaborator at
-  Lean elaboration time and keep checked definitions in an environment
-  extension. Systems are written `[ (i = 0) ↦ u, (i = 1) ↦ v ]`, binding
-  forms `hcomp A (λ j => […]) u`, `transp (λ i => A) r u`,
-  `comp (λ i => A) (λ i => […]) u`; faces are `(i = 0)`/`(i = 1)` on
-  variables, conjoined by juxtaposition.
-- `Examples/`: object-level programs. `ElabZoo` (MLTT and implicits),
-  `Prelude` (paths, `ua`, `lineToEquiv`), `Cubical` (tests), `Brunerie`,
-  `HLevel` (`hlevel`), `S1Mod2`, `Tubes`, `LocalGlobal`, `S2Mod2`, `J2S2`
-  (the cheat-free `bit`), `Pi4S3`.
+  sites; `Core/DefunTest.lean` exercises it.
+- `Frontend.lean`: Lean as the surface language, a `kexpr` syntax category
+  and the `kdef`/`kdata`/`#k…` commands.
+- `Examples/`: object-level programs; `ElabZoo` and `Prelude` first.

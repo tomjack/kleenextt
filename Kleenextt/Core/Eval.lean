@@ -2,43 +2,26 @@ import Kleenextt.Core.Syntax
 import Kleenextt.Core.Defun
 import Kleenextt.Core.Stats
 
-/-! Cubical NbE in the style of cubicaltt, on de Bruijn levels.
+/-! Cubical NbE in the style of cubicaltt, on de Bruijn levels. `transp` and
+`hcomp` are the primitives; `hcomp` in the universe is a type former of its
+own (cubicaltt's `VCompU`) whose implicit equivalence is backward transport,
+with `lemEq` for the fibers. Equivalences are contractible-fiber.
 
-`transp` and `hcomp` are the primitives (the CHM decomposition); `comp`,
-`hfill` and `ghcomp` are derived. Type formers: Pi (also over `I`), Sigma,
-`PathP`, `Glue`, the universe, and user-declared parameterless inductive
-types and HITs (`case` is the dependent eliminator, computing on `hcomp` by
-the CHM rule). `transp` for `Glue` follows Cubical Agda and Huber, with
-`ghcomp` in the `∀i.φ` correction so no empty systems arise. `hcomp` in the
-universe is a type former of its own (cubicaltt's `VCompU`): its elements
-are `glueU`, the implicit equivalence is transport backwards along the side
-line, and `lemEq` supplies the fiber contraction. Equivalences are
-contractible-fiber; `Equiv`, `isEquiv`, `fiber` and `isContr` are
-primitives unfolding to closed templates.
-
-Interval variables share the level space with ordinary variables. A value
+Interval variables share the level space with ordinary variables; a value
 in a context of size `L` mentions only levels below `L` and may be used in
-any larger context. Semantic interval binders (`line`) are written at their
-use sites as closures derived by `Defun.lean`, which give the line its body,
-computed at most once at a fresh variable, and its support, from the
-captures. Interval substitution (`act`) is skipped outside the support and
-otherwise deferred (`sub`), as in cctt: `whnf` pushes a pending substitution
-one layer, re-running the computation rules on the head and deferring the
-children. The components a rule builds for the faces of a `Glue` or a
-universe composition, and those of pairs and constructors under `transp`
-and `hcomp`, are `lazy`, since a total face discards all but one of them.
+any larger context. A `line` is built from a closure derived by
+`Defun.lean`: its body is computed at most once at a fresh variable, its
+support comes from the captures. Substitution (`act`) is skipped outside
+the support and otherwise deferred (`sub`); `whnf` pushes it one layer,
+re-running the rules on the head. Components a total face may discard are
+`lazy`. A top-level definition stays a `glued` head with its spine and
+unfolding; conversion and readback try the spine first.
 
-Evaluation is glued: a top-level definition stays a head (`glued`) with its
-spine and its unfolding; conversion and readback compare or quote the spine
-first and unfold only when that fails. Every computation rule sees through
-it (`whnf`, `frc`).
-
-Every semantic operation takes the context size `L`, the fresh-level
-supply, and the current cofibration `κ`, a face (cctt's `?cof`). A value is
-never restricted as an operation: a head is inspected under `κ` (`frc`),
-which applies `κ` at the head only, and the work for a face `γ` of a system
-runs under `κ ∧ γ`. A value built under `κ` is only inspected under a
-cofibration entailing `κ`, so faces are kept relative to `κ`. -/
+Every operation takes `L`, the fresh-level supply, and the cofibration `κ`
+in scope (cctt's `?cof`). Values are never restricted as an operation: a
+head is inspected under `κ` (`frc`), the work for a face `γ` runs under
+`κ ∧ γ`, and faces are kept relative to `κ`, since a value built under `κ`
+is only inspected under a cofibration entailing `κ`. -/
 
 namespace Kleenextt.Core
 

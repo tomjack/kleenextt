@@ -3,18 +3,13 @@ import Lean
 /-! Derived closure defunctionalization.
 
 A `defun` block wraps a semantic domain and the mutual block of rules over
-it. Closures are written at their use sites as `closure% fun x y => body`;
-the block is elaborated twice:
-
-1. Against an `unsafe` function-valued closure type, each site wrapped in a
-   `site` marker; the elaborated definitions are traversed to record, per
-   site, the locals its body captures with their types. Everything declared
-   in this pass is discarded.
-2. For real: the closure type is an inductive with one constructor per
-   site, its fields the captured locals; each site becomes its constructor
-   applied to the locals; `apply` re-elaborates each site's lambda in the
-   arm for its constructor; each `deriving` clause produces a function
-   mapping a class method over the fields.
+it, with closures written at their use sites as `closure% fun x y => body`.
+The block is elaborated twice: first against an `unsafe` function-valued
+closure type, to record the locals each site captures (everything declared
+is then discarded); then with the closure type an inductive with one
+constructor per site holding those locals, `apply` re-elaborating each
+site's lambda in its arm, and a function per `deriving` clause mapping a
+class method over the fields.
 
 `defun C (x : A) (y : B) : V deriving f (p : P) via K.m := impl … in cmds
 end defun` declares `C.apply : C → A → B → V` and `C.f : P → C → C`

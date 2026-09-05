@@ -1,14 +1,11 @@
 import Lean
 import Kleenextt.Core.Check
 
-/-! Lean as the surface language: object-level programs are written in Lean
-files through the `kexpr` syntax category, and the `kdef`/`kdata`/`#knf`/
-`#ktype`/`#kconv`/`#kdiffer`/`#kfail` commands run the Kleenextt elaborator
-at elaboration time, so object-level type errors are ordinary Lean errors.
-Only existing Lean tokens are used; the cubical primitives are identifiers
-that `toRaw` recognises at the head of an application. Faces are
-conjunctions of `(i = 0)`/`(i = 1)` on variables, by juxtaposition as in
-cubicaltt; no other cofibrations can be written. -/
+/-! Lean as the surface language: the `kexpr` syntax category, of existing
+Lean tokens only, and commands that run the Kleenextt elaborator at Lean
+elaboration time. Cubical primitives are identifiers `toRaw` recognises at
+the head of an application. Faces are `(i = 0)`/`(i = 1)` on variables,
+conjoined by juxtaposition; no other cofibrations can be written. -/
 
 namespace Kleenextt.Frontend
 
