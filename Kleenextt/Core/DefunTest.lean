@@ -112,12 +112,8 @@ end
 
 end defun
 
-#print Line
-
 private def G : Globals := ⟨0⟩
 private def ln : Val := fill G (.i (.var 1)) (.i (.var 5))
-
-#eval ln
 
 -- Sites became constructors holding exactly their captures.
 #guard ln == .line (.fill_1 (.i (.var 1)) (.i (.var 5)))
