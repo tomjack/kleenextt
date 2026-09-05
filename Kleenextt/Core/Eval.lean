@@ -588,7 +588,9 @@ mutual
       if vs &&& σ.domain == 0 then v else
       match v with
       | .line l body _ =>
-        .line L (Thunk.mk fun _ => act (L + 1) κ ((l, .var L) :: σ) body.get) (σ.varsUnder vs)
+        let vs := σ.varsUnder vs
+        let l' := levelBound vs
+        .line l' (Thunk.mk fun _ => act (l' + 1) κ ((l, .var l') :: σ) body.get) vs
       | v => tick .subs <| .sub L σ v (σ.varsUnder vs) (Thunk.mk fun _ => push L κ σ v)
 
   /-- One layer of a substitution known to touch `v`: children deferred,
@@ -645,22 +647,24 @@ mutual
   partial def sysUnder (L : Nat) (κ : Face) (sys : System Val) : List (Face × Face × Val) :=
     System.under κ sys |>.map fun (α, κα, s) => (α, κα, face L κ α s)
 
-  /-- Body memoised at the fresh level `L`; the closure carries the
-  cofibration it runs under. -/
-  partial def mkLine (L : Nat) (c : Line) : Val :=
+  /-- Body memoised at the level above the captures' support, whatever the
+  caller's: the smallest context that holds it, `lineApp` renaming. The
+  closure carries the cofibration it runs under, pruned likewise. -/
+  partial def mkLine (_ : Nat) (c : Line) : Val :=
     let vs := Line.vars c
     let c := Line.prune vs c
-    tick .lines <| .line L (Thunk.mk fun _ => tick .bodies <| gauge .maxLevel (L + 1) <| c.apply (L + 1) (.var L)) vs
+    let l := levelBound vs
+    tick .lines <| .line l (Thunk.mk fun _ => tick .bodies <| gauge .maxLevel (l + 1) <| c.apply (l + 1) (.var l)) vs
 
   /-- A line from a body mentioning the fresh level `L`. -/
   partial def mkBind (L : Nat) (body : Val) : Val :=
     .line L (Thunk.pure body) (clearLevel body.vars L)
 
   /-- A deferred computation with the support of its captures. -/
-  partial def mkLazy (L : Nat) (c : Line) : Val :=
+  partial def mkLazy (_ : Nat) (c : Line) : Val :=
     let vs := Line.vars c
     let c := Line.prune vs c
-    tick .lazies <| .lazy vs (Thunk.mk fun _ => tick .lazyBodies <| c.apply L .zero)
+    tick .lazies <| .lazy vs (Thunk.mk fun _ => tick .lazyBodies <| c.apply (levelBound vs) .zero)
 
   partial def cache (v : Val) : Val :=
     tick .cacheds <| .cached v.vars v
