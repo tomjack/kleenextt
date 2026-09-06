@@ -1,0 +1,55 @@
+{
+  "name": "kleenextt",
+  "displayName": "kleenextt",
+  "description": "Kleene cubical type theory: .ktt files, checked by a server built from these sources with lake",
+  "version": "0.1.0",
+  "publisher": "tomjack",
+  "repository": { "type": "git", "url": "https://github.com/tomjack/kleenextt" },
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "main": "./editors/vscode/extension.js",
+  "activationEvents": ["onLanguage:kleenextt"],
+  "extensionDependencies": ["leanprover.lean4"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "kleenextt",
+        "aliases": ["kleenextt", "ktt"],
+        "extensions": [".ktt"],
+        "configuration": "./editors/vscode/language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kleenextt",
+        "scopeName": "source.kleenextt",
+        "path": "./editors/vscode/syntaxes/kleenextt.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "kleenextt.restartServer",
+        "title": "kleenextt: Restart Server"
+      },
+      {
+        "command": "kleenextt.rebuildServer",
+        "title": "kleenextt: Rebuild Server"
+      }
+    ],
+    "configuration": {
+      "title": "kleenextt",
+      "properties": {
+        "kleenextt.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "A kleenextt executable to use instead of building one from the extension's sources."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[kleenextt]": {
+        "editor.insertSpaces": true
+      }
+    }
+  }
+}

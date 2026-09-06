@@ -1,0 +1,11 @@
+.git/
+.lake/
+.claude/
+refs/
+scripts/
+.envrc
+.mcp.json
+.gitattributes
+.gitignore
+*.xml
+*.txt

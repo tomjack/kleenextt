@@ -195,6 +195,8 @@ structure KModule where
   path : String
   defs : Array KDef
   datas : Array DataInfo
+  /-- Errors reported while checking this file, its imports aside. -/
+  errors : Nat
 
 /-- Imports first, in dependency order, then the file's own definitions. -/
 structure KState where
@@ -222,8 +224,8 @@ def addImports (st : KState) (closure : Array KModule) : KState :=
   closure.foldl (init := st) fun st m =>
     if st.imports.any (·.path == m.path) then st else { st with imports := st.imports.push m }
 
-def toModule (st : KState) (path : String) : KModule :=
-  { path, defs := st.defs, datas := st.datas }
+def toModule (st : KState) (path : String) (errors : Nat) : KModule :=
+  { path, defs := st.defs, datas := st.datas, errors }
 
 end KState
 
@@ -526,7 +528,7 @@ def runCmd (st : KState) (cmd : Syntax) : IO (KState × Option String) := do
 /-- The commands of a file, up to the first parse error, which comes with
 its position. -/
 partial def parseCmds (env : Environment) (input : String) (fileName : String) :
-    Array Syntax × Option String :=
+    Array Syntax × Option (String.Pos.Raw × String) :=
   let ictx := Parser.mkInputContext input fileName
   let tokens := Parser.getTokenTable env
   let pmctx : Parser.ParserModuleContext := { env, options := {} }
@@ -535,63 +537,117 @@ partial def parseCmds (env : Environment) (input : String) (fileName : String) :
     if ictx.atEnd s.pos then (acc, none)
     else
       let s := (Parser.categoryParser `kcmd 0).fn.run ictx pmctx tokens s
-      if !s.allErrors.isEmpty then (acc, some (s.toErrorMsg ictx))
-      else go s (acc.push s.stxStack.back)
+      match s.allErrors[0]? with
+      | some (pos, _, err) => (acc, some (pos, toString err))
+      | none => go s (acc.push s.stxStack.back)
   go (Parser.mkParserState input) #[]
 
 def parseExpr (env : Environment) (input : String) : Except String (TSyntax `kexpr) :=
   (⟨·⟩) <$> Parser.runParserCategory env `kexpr input
 
+inductive Severity
+  | error
+  | info
+  deriving BEq
+
+/-- A message about a file, at UTF-8 offsets into it. -/
+structure Diagnostic where
+  pos : String.Pos.Raw
+  endPos : String.Pos.Raw
+  severity : Severity
+  msg : String
+
+def Diagnostic.format (ictx : Parser.InputContext) (d : Diagnostic) : String :=
+  let pos := ictx.fileMap.toPosition d.pos
+  let severity := match d.severity with
+    | .error => "error"
+    | .info => "info"
+  s!"{ictx.fileName}:{pos.line}:{pos.column}: {severity}: {d.msg}"
+
+/-- Errors to stderr, the rest to stdout. -/
+def printDiagnostic (ictx : Parser.InputContext) (d : Diagnostic) : IO Unit := do
+  let out ← if d.severity == .error then IO.getStderr else IO.getStdout
+  out.putStrLn (d.format ictx)
+
 /-- Files are loaded once per run, by real path. -/
 structure Loader where
   env : Environment
   loaded : Std.HashMap String (Array KModule) := {}
+  /-- The content each loaded file had, by real path. -/
+  sources : Std.HashMap String String := {}
   loading : List String := []
   errors : Nat := 0
+  emit : Parser.InputContext → Diagnostic → IO Unit := printDiagnostic
+  /-- Each command of the requested file before it runs, then `none` when the
+  file is done. -/
+  progress : Parser.InputContext → Option Syntax → IO Unit := fun _ _ => pure ()
 
 abbrev LoaderM := StateT Loader IO
 
-private def report (ictx : Parser.InputContext) (stx : Syntax) (severity msg : String) : IO Unit := do
-  let pos := ictx.fileMap.toPosition (stx.getPos?.getD 0)
-  let out ← if severity == "error" then IO.getStderr else IO.getStdout
-  out.putStrLn s!"{ictx.fileName}:{pos.line}:{pos.column}: {severity}: {msg}"
-
-/-- Check a file; with `diagnostics`, run its `#…` commands too. Returns its
-import closure, dependencies first, ending with the file itself. -/
-partial def loadFile (path : System.FilePath) (diagnostics : Bool) : LoaderM (Array KModule) := do
-  let real := (← IO.FS.realPath path).toString
-  if let some closure := (← get).loaded[real]? then return closure
+/-- Check a file; with `diagnostics`, run its `#…` commands and report
+progress too. `source?` stands in for the file's content on disk, and the
+result is then not cached. Returns its import closure, dependencies first,
+ending with the file itself. Stops between commands once the current task is
+cancelled; the result is then partial and not cached. -/
+partial def loadFile (path : System.FilePath) (diagnostics : Bool) (source? : Option String := none) :
+    LoaderM (Array KModule) := do
+  let real : System.FilePath ← try IO.FS.realPath path catch _ => pure path
+  let real := real.toString
+  if source?.isNone then
+    if let some closure := (← get).loaded[real]? then return closure
   if (← get).loading.contains real then
     throw (IO.userError s!"{path}: import cycle")
   modify fun l => { l with loading := real :: l.loading }
-  let input ← IO.FS.readFile path
+  let input ← match source? with
+    | some s => pure s
+    | none => IO.FS.readFile path
   let ictx := Parser.mkInputContext input path.toString
   let (cmds, parseError) := parseCmds (← get).env input path.toString
   let mut st : KState := {}
+  let mut errors := 0
+  let mut cancelled := false
   for cmd in cmds do
+    if ← IO.checkCanceled then
+      cancelled := true
+      break
+    let l ← get
+    if diagnostics then l.progress ictx (some cmd)
+    let pos := cmd.getPos?.getD 0
+    let emit (severity : Severity) (msg : String) : IO Unit :=
+      l.emit ictx { pos, endPos := cmd.getTailPos?.getD pos, severity, msg }
     match cmd with
     | `(kcmd| import $m:ident) =>
       if !st.defs.isEmpty || !st.datas.isEmpty then
-        report ictx cmd "error" "imports must come before definitions"
-        modify fun l => { l with errors := l.errors + 1 }
+        emit .error "imports must come before definitions"
+        errors := errors + 1
       else
         let file := path.parent.getD "." / (m.getId.toString.replace "." "/" ++ ".ktt")
-        st := st.addImports (← loadFile file false)
+        let closure ← loadFile file false
+        st := st.addImports closure
+        let bad := closure.filter (·.errors > 0)
+        unless bad.isEmpty do
+          emit .error s!"errors in imported {", ".intercalate (bad.toList.map (·.path))}"
     | _ =>
       if cmd.getKind == ``Syntax.Cmd.moduleDoc then pure ()
       else if diagnostics || isDecl cmd then
         try
           let (st', info?) ← runCmd st cmd
           st := st'
-          if let some info := info? then report ictx cmd "info" info
+          if let some info := info? then emit .info info
         catch e =>
-          report ictx cmd "error" (toString e)
-          modify fun l => { l with errors := l.errors + 1 }
-  if let some msg := parseError then
-    IO.eprintln msg
-    modify fun l => { l with errors := l.errors + 1 }
-  let closure := st.imports.push (st.toModule real)
-  modify fun l => { l with loaded := l.loaded.insert real closure, loading := l.loading.drop 1 }
+          emit .error (toString e)
+          errors := errors + 1
+  if !cancelled then
+    if let some (pos, msg) := parseError then
+      (← get).emit ictx { pos, endPos := pos, severity := .error, msg }
+      errors := errors + 1
+    if diagnostics then (← get).progress ictx none
+  let closure := st.imports.push (st.toModule real errors)
+  modify fun l => { l with
+    errors := l.errors + errors
+    loading := l.loading.drop 1
+    loaded := if cancelled || source?.isSome then l.loaded else l.loaded.insert real closure
+    sources := if cancelled || source?.isSome then l.sources else l.sources.insert real input }
   pure closure
 
 /-- The state of a checked file: its imports and its own definitions. -/

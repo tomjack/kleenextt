@@ -1,0 +1,95 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "kleenextt",
+  "scopeName": "source.kleenextt",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#declarations" },
+    { "include": "#commands" },
+    { "include": "#keywords" },
+    { "include": "#sorry" },
+    { "include": "#primitives" },
+    { "include": "#operators" },
+    { "include": "#literals" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.documentation.kleenextt",
+          "begin": "/-[!-]",
+          "end": "-/",
+          "patterns": [{ "include": "#block-comment" }]
+        },
+        { "include": "#block-comment" },
+        {
+          "name": "comment.line.double-dash.kleenextt",
+          "match": "--.*$"
+        }
+      ]
+    },
+    "block-comment": {
+      "name": "comment.block.kleenextt",
+      "begin": "/-",
+      "end": "-/",
+      "patterns": [{ "include": "#block-comment" }]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(def)\\s+([^\\s:]+)",
+          "captures": {
+            "1": { "name": "keyword.other.definition.kleenextt" },
+            "2": { "name": "entity.name.function.kleenextt" }
+          }
+        },
+        {
+          "match": "\\b(data)\\s+([^\\s:=]+)",
+          "captures": {
+            "1": { "name": "keyword.other.definition.kleenextt" },
+            "2": { "name": "entity.name.type.kleenextt" }
+          }
+        },
+        {
+          "match": "\\b(import)\\s+([^\\s]+)",
+          "captures": {
+            "1": { "name": "keyword.control.import.kleenextt" },
+            "2": { "name": "entity.name.namespace.kleenextt" }
+          }
+        }
+      ]
+    },
+    "commands": {
+      "name": "keyword.other.command.kleenextt",
+      "match": "#(nf|time|trace|term|type|head|overlaps|stable|conv|differ|fail)\\b"
+    },
+    "keywords": {
+      "name": "keyword.control.kleenextt",
+      "match": "\\b(case|hlevel|let)\\b"
+    },
+    "sorry": {
+      "name": "invalid.deprecated.sorry.kleenextt",
+      "match": "\\bsorry\\b"
+    },
+    "primitives": {
+      "patterns": [
+        {
+          "name": "support.type.kleenextt",
+          "match": "\\b(Type|I|Path|PathP|isContr|fiber|isEquiv|Equiv)\\b"
+        },
+        {
+          "name": "support.function.kleenextt",
+          "match": "\\b(fst|snd|Glue|glue|unglue|glueU|transp|hcomp|ghcomp|comp|hfill|coe|hcom)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "name": "keyword.operator.kleenextt",
+      "match": "λ|↦|→|->|=>|:=|×|∧|∨|¬"
+    },
+    "literals": {
+      "name": "constant.numeric.kleenextt",
+      "match": "\\b[01]\\b"
+    }
+  }
+}
