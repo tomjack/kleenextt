@@ -13,9 +13,14 @@ initialization option) gets its worker killed and is remembered as slow:
 the replacement worker checks it at its type only, with a warning, so
 what follows still checks against it. "Check to cursor" runs every
 command up to the cursor in full, whatever the budget, and "check file"
-the whole file; the result stays until an edit above it. A killed worker
-starts over, so the file's imports and earlier commands are checked
-again, minus the ones it now knows to skip.
+the whole file; the result stays until an edit above it.
+
+Checked commands are also kept on disk, in `$XDG_CACHE_HOME/kleenextt`
+or `~/.cache/kleenextt`, keyed by a hash chain over the command's text,
+the commands before it and the imports' sources, and seeded by the
+binary. A killed or fresh worker replays them, so imports, earlier
+commands, and results once obtained in full cost nothing again until
+the text above them changes. `#time` and `#trace` are never cached.
 
 Go to definition is resolved on the syntax: a local name goes to its
 binder, a global one to the latest earlier `def`, `data` or constructor

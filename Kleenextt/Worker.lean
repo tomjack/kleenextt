@@ -37,6 +37,8 @@ structure Policy where
 structure Context where
   env : Environment
   out : Out
+  cacheDir : Option System.FilePath
+  seed : UInt64
   cache : IO.Ref Cache
   docs : IO.Ref (Std.HashMap DocumentUri Doc)
   analyses : IO.Ref (Std.HashMap DocumentUri Analysis)
@@ -97,7 +99,8 @@ def check (ctx : Context) (uri : DocumentUri) (version : Nat) (text : FileMap) :
   let cache ← (← ctx.cache.get).fresh
   let snapshots := (← ctx.snapshots.get)[uri]?.getD {}
   let loader : Loader :=
-    { env := ctx.env, loaded := cache.loaded, sources := cache.sources, emit, progress, skip, snapshots }
+    { env := ctx.env, loaded := cache.loaded, sources := cache.sources, emit, progress, skip, snapshots
+      cacheDir := ctx.cacheDir, seed := ctx.seed }
   let (closure, l) ← (loadFile path true (some text.source)).run loader
   ctx.snapshots.modify (·.insert uri l.snapshotsOut)
   unless ← IO.checkCanceled do
@@ -178,6 +181,8 @@ def run (env : Environment) : IO UInt32 := do
   let ctx : Context := {
     env
     out := ← Out.new (← IO.getStdout)
+    cacheDir := ← Cache.dir
+    seed := ← Cache.seed
     cache := ← IO.mkRef {}
     docs := ← IO.mkRef {}
     analyses := ← IO.mkRef {}

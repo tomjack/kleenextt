@@ -1,5 +1,6 @@
 import Kleenextt.Syntax
 import Kleenextt.Symbols
+import Kleenextt.Cache
 import Kleenextt.Core.Check
 
 /-! From `kcmd` syntax to the elaborator: a `.ktt` file is a sequence of
@@ -585,6 +586,28 @@ def printDiagnostic (ictx : Parser.InputContext) (d : Diagnostic) : IO Unit := d
   let out ← if d.severity == .error then IO.getStderr else IO.getStdout
   out.putStrLn (d.format ictx)
 
+/-- What a command added to the state. -/
+inductive Delta
+  | defn (d : KDef)
+  | data (d : DataInfo)
+  | nothing
+
+def KState.apply (st : KState) : Delta → KState
+  | .defn d => { st with defs := st.defs.push d }
+  | .data d => { st with datas := st.datas.push d }
+  | .nothing => st
+
+def KState.delta (before after : KState) : Delta :=
+  if after.defs.size > before.defs.size then (after.defs.back?.map .defn).getD .nothing
+  else if after.datas.size > before.datas.size then (after.datas.back?.map .data).getD .nothing
+  else .nothing
+
+/-- A checked command on disk; diagnostics are relative to its start. -/
+structure Cached where
+  delta : Delta
+  diags : Array Diagnostic
+  errors : Nat
+
 /-- A command's source text. -/
 def cmdText (ictx : Parser.InputContext) (cmd : Syntax) : String :=
   let pos := cmd.getPos?.getD 0
@@ -620,6 +643,10 @@ structure Loader where
   snapshots : Std.HashMap UInt64 Snapshot := {}
   /-- Those reused or made by this check. -/
   snapshotsOut : Std.HashMap UInt64 Snapshot := {}
+  /-- Checked commands on disk, of any file, by chain. -/
+  cacheDir : Option System.FilePath := none
+  /-- The start of every chain. -/
+  seed : UInt64 := 7
 
 abbrev LoaderM := StateT Loader IO
 
@@ -645,7 +672,7 @@ partial def loadFile (path : System.FilePath) (diagnostics : Bool) (source? : Op
   let mut st : KState := {}
   let mut errors := 0
   let mut cancelled := false
-  let mut chain : UInt64 := 7
+  let mut chain : UInt64 := (← get).seed
   for cmd in cmds do
     if ← IO.checkCanceled then
       cancelled := true
@@ -682,7 +709,20 @@ partial def loadFile (path : System.FilePath) (diagnostics : Bool) (source? : Op
               errors := errors + s.errors
               modify fun l => { l with snapshotsOut := l.snapshotsOut.insert chain s }
               continue
-          l.progress ictx (some cmd)
+        let cacheable := cmd.getKind != ``Syntax.Cmd.time && cmd.getKind != ``Syntax.Cmd.trace
+        if cacheable then
+          if let some dir := l.cacheDir then
+            if let some c ← Cache.read Cached dir chain then
+              for d in c.diags do l.emit ictx (d.shift pos.byteIdx)
+              st := st.apply c.delta
+              errors := errors + c.errors
+              if diagnostics then
+                let snapshot : Snapshot :=
+                  { chain, state := st, diags := c.diags, errors := c.errors, skipped := false }
+                modify fun l => { l with snapshotsOut := l.snapshotsOut.insert chain snapshot }
+              continue
+        if diagnostics then l.progress ictx (some cmd)
+        let before := st
         let mut diags : Array Diagnostic := #[]
         let mut errs := 0
         if skip && !isDef cmd then
@@ -699,10 +739,13 @@ partial def loadFile (path : System.FilePath) (diagnostics : Bool) (source? : Op
             errs := 1
         for d in diags do l.emit ictx d
         errors := errors + errs
+        let relative := diags.map (·.shift (-(pos.byteIdx : Int)))
         if diagnostics then
-          let snapshot : Snapshot :=
-            { chain, state := st, diags := diags.map (·.shift (-(pos.byteIdx : Int))), errors := errs, skipped := skip }
+          let snapshot : Snapshot := { chain, state := st, diags := relative, errors := errs, skipped := skip }
           modify fun l => { l with snapshotsOut := l.snapshotsOut.insert chain snapshot }
+        if cacheable && !skip then
+          if let some dir := l.cacheDir then
+            Cache.write dir chain { delta := before.delta st, diags := relative, errors := errs : Cached }
   if !cancelled then
     if let some (pos, msg) := parseError then
       (← get).emit ictx { pos, endPos := pos, severity := .error, msg }
