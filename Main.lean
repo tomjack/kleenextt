@@ -1,15 +1,18 @@
 import Kleenextt.Frontend
 import Kleenextt.Server
+import Kleenextt.Worker
 
 open Kleenextt.Frontend
 
 def usage : String :=
   "usage: kleenextt check FILE...      check the files, running their # commands\n" ++
   "       kleenextt nf FILE EXPR      normalize a name or expression in FILE's context\n" ++
-  "       kleenextt --server          run a language server on stdio"
+  "       kleenextt --server          run a language server on stdio\n" ++
+  "       kleenextt --worker          check documents for the server, on stdio"
 
 def run (env : Lean.Environment) : List String → IO UInt32
   | ["--server"] => Kleenextt.Server.run env
+  | ["--worker"] => Kleenextt.Worker.run env
   | "check" :: files@(_ :: _) => do
     let (_, l) ← (files.forM fun f => discard <| loadFile f true).run { env }
     pure (if l.errors == 0 then 0 else 1)

@@ -1,163 +1,201 @@
-import Lean.Data.Lsp
 import Lean.Server.Utils
-import Kleenextt.Frontend
+import Kleenextt.Lsp
 
 /-! `kleenextt --server`: a language server on stdio. Each open `.ktt` file is
-checked in its own task, cancelled between commands when it changes, and its
-messages are published as diagnostics as they arrive, with Lean's
-`$/lean/fileProgress` marking the unchecked remainder. Imports are checked
-from disk and kept across checks while every file in their closure is
-unchanged. -/
+checked by its own `kleenextt --worker` process, whose diagnostics and
+progress are forwarded to the client. A command that runs past the time
+budget gets its worker killed and is remembered as slow: the replacement
+checks it at its type only, until `$/kleenextt/check` asks for it in full.
+A killed worker starts over, so the file's imports and earlier commands are
+checked again. -/
 
 namespace Kleenextt.Server
 
-open Lean Lsp JsonRpc Frontend
+open Lean Lean.Lsp Lean.JsonRpc Frontend Kleenextt.Lsp
 
-/-- Import closures checked from disk and the sources they were checked from. -/
-structure Cache where
-  loaded : Std.HashMap String (Array KModule) := {}
-  sources : Std.HashMap String String := {}
+structure Worker where
+  child : IO.Process.Child { stdin := .piped, stdout := .piped, stderr := .piped }
+  /-- The worker's stdin. -/
+  out : Out
 
-structure Doc where
+structure DocState where
   version : Nat
   text : FileMap
-  task : Task (Except IO.Error Unit)
-
-/-- What a completed check of a document found: its import closure, and the
-sources the imports were read from. -/
-structure Analysis where
-  closure : Array KModule
-  sources : Std.HashMap String String
+  worker : Option Worker := none
+  /-- Bumped whenever a worker is started or killed; a timer acts only on the
+  generation it was set for. -/
+  gen : Nat := 0
+  /-- The latest version the worker has reported on. -/
+  seen : Nat := 0
+  current : Option CommandInfo := none
+  /-- Forwarded requests the worker has not answered. -/
+  pending : Array RequestID := #[]
+  /-- Commands requested in full, until the check that runs them completes. -/
+  forced : Array Nat := #[]
 
 structure Context where
   env : Environment
-  out : IO.FS.Stream
-  /-- Serialises writes; cancelling a document's task while holding it keeps
-  the task's later output out. -/
-  lock : Std.Mutex Unit
-  cache : IO.Ref Cache
-  docs : IO.Ref (Std.HashMap DocumentUri Doc)
-  analyses : IO.Ref (Std.HashMap DocumentUri Analysis)
+  out : Out
+  budgetMs : IO.Ref Nat
+  slow : IO.Ref (Std.HashSet Nat)
+  docs : Std.Mutex (Std.HashMap DocumentUri DocState)
 
-/-- Dropped from a cancelled task, so a stale check publishes nothing after
-its replacement has started. -/
-def send (ctx : Context) (msg : JsonRpc.Message) : IO Unit :=
-  ctx.lock.atomically do
-    unless ← IO.checkCanceled do
-      ctx.out.writeLspMessage msg
+def after (ms : Nat) (act : IO Unit) : IO Unit :=
+  discard <| IO.asTask (prio := .dedicated) do
+    IO.sleep ms.toUInt32
+    act
 
-def notify [ToJson α] (ctx : Context) (method : String) (params : α) : IO Unit :=
-  send ctx (.notification method (Json.toStructured? params).toOption)
+/-- Kill the document's worker, answering what it left unanswered. -/
+def kill (ctx : Context) (d : DocState) : IO DocState := do
+  if let some w := d.worker then
+    w.child.kill
+  for id in d.pending do
+    ctx.out.send (.response id .null)
+  pure { d with worker := none, current := none, pending := #[], gen := d.gen + 1 }
 
-def respond [ToJson α] (ctx : Context) (id : RequestID) (result : α) : IO Unit :=
-  send ctx (.response id (toJson result))
+/-- Mark the document as being checked by nobody and drop a worker whose
+generation has passed. -/
+def onWorkerExit (ctx : Context) (uri : DocumentUri) (gen : Nat) (code : UInt32) : IO Unit :=
+  ctx.docs.atomically do
+    if let some d := (← get)[uri]? then
+      if d.gen == gen then
+        IO.eprintln s!"kleenextt: worker for {uri} exited with {code}"
+        modify (·.insert uri (← kill ctx { d with worker := none }))
 
-def pathOf (uri : DocumentUri) : System.FilePath :=
-  (System.Uri.fileUriToPath? uri).getD uri
+mutual
+  /-- Start a worker on the document as it currently reads. -/
+  partial def spawn (ctx : Context) (uri : DocumentUri) (d : DocState) : IO DocState := do
+    let child ← IO.Process.spawn {
+      cmd := (← IO.appPath).toString
+      args := #["--worker"]
+      stdin := .piped, stdout := .piped, stderr := .piped }
+    let out ← Out.new (IO.FS.Stream.ofHandle child.stdin)
+    let gen := d.gen + 1
+    discard <| IO.asTask (prio := .dedicated) do
+      let err := IO.FS.Stream.ofHandle child.stderr
+      repeat
+        let line ← err.getLine
+        if line.isEmpty then break
+        IO.eprint line
+    discard <| IO.asTask (prio := .dedicated) do
+      let stream := IO.FS.Stream.ofHandle child.stdout
+      repeat
+        let msg ← try stream.readLspMessage catch _ => break
+        onWorkerMessage ctx uri gen msg
+      onWorkerExit ctx uri gen (← child.wait)
+    out.notify "$/kleenextt/policy" { slow := (← ctx.slow.get).toArray, forced := d.forced : PolicyParams }
+    out.notify "textDocument/didOpen"
+      { textDocument := { uri, languageId := "kleenextt", version := d.version, text := d.text.source }
+        : DidOpenTextDocumentParams }
+    pure { d with worker := some { child, out }, gen, seen := 0, current := none, pending := #[] }
 
-/-- The cached closures whose files all still have the content they were
-checked from. -/
-def Cache.fresh (c : Cache) : IO Cache := do
-  let mut fresh : Std.HashMap String Bool := {}
-  for (path, source) in c.sources do
-    let current ← try IO.FS.readFile path catch _ => pure ""
-    fresh := fresh.insert path (current == source)
-  pure {
-    loaded := c.loaded.filter fun _ closure => closure.all fun m => fresh[m.path]?.getD false
-    sources := c.sources.filter fun path _ => fresh[path]?.getD false }
+  /-- Kill the worker and start over, without the commands requested in full. -/
+  partial def restart (ctx : Context) (uri : DocumentUri) (d : DocState) : IO DocState := do
+    spawn ctx uri { ← kill ctx d with forced := #[] }
 
-def Cache.merge (c : Cache) (l : Loader) : Cache :=
-  { loaded := l.loaded.fold (·.insert) c.loaded, sources := l.sources.fold (·.insert) c.sources }
+  partial def onWorkerMessage (ctx : Context) (uri : DocumentUri) (gen : Nat) (msg : JsonRpc.Message) : IO Unit := do
+    match msg with
+    | .notification "$/kleenextt/command" params? =>
+      let p : CommandParams ← parseParams params?
+      ctx.docs.atomically do
+        let some d := (← get)[uri]? | return
+        unless d.gen == gen do return
+        let forced := if p.command?.isNone then #[] else d.forced
+        modify (·.insert uri { d with seen := max d.seen p.version, current := p.command?, forced })
+        if let some c := p.command? then
+          let budget ← ctx.budgetMs.get
+          unless c.forced || budget == 0 do
+            after budget (overBudget ctx uri gen c.hash)
+    | .notification _ _ => ctx.out.send msg
+    | .response id _ | .responseError id .. =>
+      ctx.docs.atomically do
+        if let some d := (← get)[uri]? then
+          modify (·.insert uri { d with pending := d.pending.erase id })
+      ctx.out.send msg
+    | .request .. => pure ()
 
-def toLsp (text : FileMap) (d : Frontend.Diagnostic) : Lsp.Diagnostic :=
-  { range := { start := text.utf8PosToLspPos d.pos, «end» := text.utf8PosToLspPos d.endPos }
-    severity? := some (match d.severity with
-      | .error => .error
-      | .info => .information)
-    source? := some "kleenextt"
-    message := d.msg }
+  /-- The command is still running after the budget: remember it as slow and
+  start over. -/
+  partial def overBudget (ctx : Context) (uri : DocumentUri) (gen : Nat) (h : Nat) : IO Unit :=
+    ctx.docs.atomically do
+      let some d := (← get)[uri]? | return
+      unless d.gen == gen do return
+      let some c := d.current | return
+      unless c.hash == h && !c.forced do return
+      ctx.slow.modify (·.insert h)
+      modify (·.insert uri (← restart ctx uri d))
+end
 
-/-- Check a document, on the task that owns it. -/
-def check (ctx : Context) (uri : DocumentUri) (version : Nat) (text : FileMap) : IO Unit := do
-  let path := pathOf uri
-  let diags ← IO.mkRef (#[] : Array Lsp.Diagnostic)
-  let publish : IO Unit := do
-    notify ctx "textDocument/publishDiagnostics"
-      { uri, version? := some version, diagnostics := ← diags.get : PublishDiagnosticsParams }
-  let emit (ictx : Parser.InputContext) (d : Frontend.Diagnostic) : IO Unit := do
-    if ictx.fileName == path.toString then
-      diags.modify (·.push (toLsp text d))
-      publish
-    else
-      IO.eprintln (d.format ictx)
-  let progress (_ : Parser.InputContext) (cmd? : Option Syntax) : IO Unit := do
-    let processing := match cmd? with
-      | some cmd => #[{ range := {
-          start := text.utf8PosToLspPos (cmd.getPos?.getD 0)
-          «end» := text.utf8PosToLspPos text.source.rawEndPos } }]
-      | none => #[]
-    notify ctx "$/lean/fileProgress"
-      { textDocument := { uri, version? := some version }, processing : LeanFileProgressParams }
-  publish
-  let cache ← (← ctx.cache.get).fresh
-  let loader : Loader := { env := ctx.env, loaded := cache.loaded, sources := cache.sources, emit, progress }
-  let (closure, l) ← (loadFile path true (some text.source)).run loader
-  unless ← IO.checkCanceled do
-    ctx.cache.modify (·.merge l)
-    ctx.analyses.modify (·.insert uri { closure, sources := l.sources })
+private def posLE (a b : Lsp.Position) : Bool :=
+  a.line < b.line || (a.line == b.line && a.character ≤ b.character)
 
-/-- Replace the document's check, after the previous one has stopped. -/
-def startCheck (ctx : Context) (uri : DocumentUri) (version : Nat) (text : FileMap) : IO Unit := do
-  let prev := (← ctx.docs.get)[uri]?
-  if let some d := prev then ctx.lock.atomically (IO.cancel d.task)
-  let task ← IO.asTask (prio := .dedicated) do
-    if let some d := prev then discard <| IO.wait d.task
-    try check ctx uri version text
-    catch e => IO.eprintln s!"{uri}: {e}"
-  ctx.docs.modify (·.insert uri { version, text, task })
+/-- Whether the change reaches the command being checked in full, which then
+has to start over; a change after it can wait for it. -/
+private def touches (current : Option CommandInfo) : TextDocumentContentChangeEvent → Bool
+  | .rangeChange r _ => match current with
+    | some c => posLE r.start c.range.end
+    | none => true
+  | .fullChange _ => true
 
-def close (ctx : Context) (uri : DocumentUri) : IO Unit := do
-  if let some d := (← ctx.docs.get)[uri]? then
-    ctx.lock.atomically (IO.cancel d.task)
-    ctx.docs.modify (·.erase uri)
-    ctx.analyses.modify (·.erase uri)
-    notify ctx "$/lean/fileProgress" { textDocument := { uri }, processing := #[] : LeanFileProgressParams }
-    notify ctx "textDocument/publishDiagnostics" { uri, diagnostics := #[] : PublishDiagnosticsParams }
+def didChange (ctx : Context) (p : DidChangeTextDocumentParams) : IO Unit := do
+  let uri := p.textDocument.uri
+  ctx.docs.atomically do
+    let some d := (← get)[uri]? | return
+    let text := Lean.Server.foldDocumentChanges p.contentChanges d.text
+    let version := p.textDocument.version?.getD (d.version + 1)
+    let d := { d with version, text }
+    match d.worker with
+    | none => modify (·.insert uri (← spawn ctx uri d))
+    | some w =>
+      modify (·.insert uri d)
+      w.out.notify "textDocument/didChange" p
+      let forcedRunning := d.current.any (·.forced)
+      let budget ← ctx.budgetMs.get
+      unless budget == 0 || (forcedRunning && !(p.contentChanges.any (touches d.current))) do
+        let gen := d.gen
+        after budget <| ctx.docs.atomically do
+          let some d := (← get)[uri]? | return
+          unless d.gen == gen && d.seen < version do return
+          modify (·.insert uri (← restart ctx uri d))
 
-def parseParams [FromJson α] (params? : Option Json.Structured) : IO α :=
-  match params? with
-  | some (.arr a) => IO.ofExcept (fromJson? (Json.arr a))
-  | some (.obj o) => IO.ofExcept (fromJson? (Json.obj o))
-  | none => throw (IO.userError "missing params")
+/-- Check in full up to a position, or the whole document. -/
+def checkInFull (ctx : Context) (p : CheckParams) : IO Unit := do
+  let uri := p.textDocument.uri
+  ctx.docs.atomically do
+    let some d := (← get)[uri]? | return
+    let path := (pathOf uri).toString
+    let (cmds, _) := parseCmds ctx.env d.text.source path
+    let ictx := Parser.mkInputContext d.text.source path
+    let limit := p.position?.map d.text.lspPosToUtf8Pos
+    let hashes := cmds.filterMap fun c =>
+      if limit.all (c.getPos?.getD 0 ≤ ·) then some (cmdHash ictx c) else none
+    let forced := (Std.HashSet.ofArray (d.forced ++ hashes)).toArray
+    let d := { d with forced }
+    match d.worker with
+    | none => modify (·.insert uri (← spawn ctx uri d))
+    | some w =>
+      modify (·.insert uri d)
+      w.out.notify "$/kleenextt/policy" { slow := (← ctx.slow.get).toArray, forced : PolicyParams }
 
-/-- Where the identifier at `pos` is defined: its binder in this command, a
-definition earlier in this document as it currently reads, or one in an
-import as of the last completed check. -/
-def definition (ctx : Context) (uri : DocumentUri) (doc : Doc) (pos : Lsp.Position) : IO (Option Location) := do
-  let text := doc.text
-  let path := pathOf uri
-  let (cmds, _) := parseCmds ctx.env text.source path.toString
-  let at_ := text.lspPosToUtf8Pos pos
-  let some cmd := cmds.find? fun c => c.getPos?.getD 0 ≤ at_ && at_ ≤ c.getTailPos?.getD 0
-    | return none
-  let range (t : FileMap) (s : Symbols.Symbol) : Range :=
-    { start := t.utf8PosToLspPos s.pos, «end» := t.utf8PosToLspPos s.endPos }
-  match Symbols.resolve cmd at_ with
-  | none => return none
-  | some (.local b) => return some { uri, range := range text b }
-  | some (.import m) =>
-    let file := path.parent.getD "." / (m.replace "." "/" ++ ".ktt")
-    return some { uri := System.Uri.pathToUri file, range := { start := ⟨0, 0⟩, «end» := ⟨0, 0⟩ } }
-  | some (.global name) =>
-    let before := cmds.filter fun c => c.getPos?.getD 0 < at_
-    if let some s := (before.flatMap Symbols.ofCmd).reverse.find? (·.name == name) then
-      return some { uri, range := range text s }
-    let some analysis := (← ctx.analyses.get)[uri]? | return none
-    for m in analysis.closure.pop.reverse do
-      if let some s := m.symbols.reverse.find? (·.name == name) then
-        if let some source := analysis.sources[m.path]? then
-          return some { uri := System.Uri.pathToUri m.path, range := range source.toFileMap s }
-    return none
+def didClose (ctx : Context) (uri : DocumentUri) : IO Unit := do
+  ctx.docs.atomically do
+    if let some d := (← get)[uri]? then
+      discard <| kill ctx d
+      modify (·.erase uri)
+  ctx.out.notify "$/lean/fileProgress" { textDocument := { uri }, processing := #[] : LeanFileProgressParams }
+  ctx.out.notify "textDocument/publishDiagnostics" { uri, diagnostics := #[] : PublishDiagnosticsParams }
+
+/-- Forward a request about a document to its worker. -/
+def forward (ctx : Context) (id : RequestID) (uri : DocumentUri) (msg : JsonRpc.Message) : IO Unit := do
+  ctx.docs.atomically do
+    match (← get)[uri]? with
+    | some d =>
+      match d.worker with
+      | some w =>
+        modify (·.insert uri { d with pending := d.pending.push id })
+        w.out.send msg
+      | none => ctx.out.send (.response id .null)
+    | none => ctx.out.send (.response id .null)
 
 def capabilities : ServerCapabilities :=
   { textDocumentSync? := some {
@@ -168,46 +206,59 @@ def capabilities : ServerCapabilities :=
       save? := none }
     definitionProvider := true }
 
+/-- `initializationOptions.timeBudget`, in seconds; `0` for none. -/
+def applyInitOptions (ctx : Context) (params? : Option Json.Structured) : IO Unit := do
+  let json : Json := match params? with
+    | some (.obj o) => Json.obj o
+    | _ => Json.null
+  match json.getObjVal? "initializationOptions" with
+  | .ok opts =>
+    match opts.getObjVal? "timeBudget" with
+    | .ok (.num n) => ctx.budgetMs.set (n.toFloat * 1000).toUInt64.toNat
+    | _ => pure ()
+  | _ => pure ()
+
 /-- Until `exit` or the end of input. -/
 partial def loop (ctx : Context) (inp : IO.FS.Stream) : IO Unit := do
   let msg ← try inp.readLspMessage catch _ => return
   match msg with
-  | .request id "initialize" _ =>
-    respond ctx id { capabilities, serverInfo? := some { name := "kleenextt" } : InitializeResult }
-  | .request id "shutdown" _ => send ctx (.response id .null)
+  | .request id "initialize" params? =>
+    applyInitOptions ctx params?
+    ctx.out.respond id { capabilities, serverInfo? := some { name := "kleenextt" } : InitializeResult }
+  | .request id "shutdown" _ => ctx.out.send (.response id .null)
   | .request id "textDocument/definition" params? =>
     let p : TextDocumentPositionParams ← parseParams params?
-    match (← ctx.docs.get)[p.textDocument.uri]? with
-    | some d => respond ctx id (← definition ctx p.textDocument.uri d p.position)
-    | none => send ctx (.response id .null)
+    forward ctx id p.textDocument.uri msg
+  | .request id "$/kleenextt/check" params? =>
+    checkInFull ctx (← parseParams params?)
+    ctx.out.send (.response id .null)
   | .request id method _ =>
-    send ctx (.responseError id .methodNotFound s!"unsupported request: {method}" none)
+    ctx.out.send (.responseError id .methodNotFound s!"unsupported request: {method}" none)
   | .notification "exit" _ => return
   | .notification "textDocument/didOpen" params? =>
     let p : DidOpenTextDocumentParams ← parseParams params?
     let doc := p.textDocument
-    startCheck ctx doc.uri doc.version doc.text.toFileMap
-  | .notification "textDocument/didChange" params? =>
-    let p : DidChangeTextDocumentParams ← parseParams params?
-    let uri := p.textDocument.uri
-    if let some d := (← ctx.docs.get)[uri]? then
-      let text := Lean.Server.foldDocumentChanges p.contentChanges d.text
-      startCheck ctx uri (p.textDocument.version?.getD (d.version + 1)) text
+    ctx.docs.atomically do
+      let d ← spawn ctx doc.uri { version := doc.version, text := doc.text.toFileMap }
+      modify (·.insert doc.uri d)
+  | .notification "textDocument/didChange" params? => didChange ctx (← parseParams params?)
   | .notification "textDocument/didClose" params? =>
     let p : DidCloseTextDocumentParams ← parseParams params?
-    close ctx p.textDocument.uri
+    didClose ctx p.textDocument.uri
   | _ => pure ()
   loop ctx inp
 
 def run (env : Environment) : IO UInt32 := do
   let ctx : Context := {
     env
-    out := ← IO.getStdout
-    lock := ← Std.Mutex.new ()
-    cache := ← IO.mkRef {}
-    docs := ← IO.mkRef {}
-    analyses := ← IO.mkRef {} }
+    out := ← Out.new (← IO.getStdout)
+    budgetMs := ← IO.mkRef 5000
+    slow := ← IO.mkRef {}
+    docs := ← Std.Mutex.new {} }
   loop ctx (← IO.getStdin)
+  ctx.docs.atomically do
+    for (_, d) in ← get do
+      discard <| kill ctx d
   pure 0
 
 end Kleenextt.Server

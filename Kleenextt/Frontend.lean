@@ -285,13 +285,13 @@ private def elabData (st : KState) (x : Ident) (cons : Array (TSyntax `kcon)) : 
     d := { d with cons := d.cons ++ [con] }
   pure { st with datas := st.datas.push d }
 
-private def elabDef (st : KState) (x : Ident) (a t : TSyntax `kexpr) : IO KState := do
+private def elabDef (st : KState) (x : Ident) (a : TSyntax `kexpr) (t : Raw) : IO KState := do
   let (cxt, G) := st.cxt
   let r : Unit → Except String (Tm × Tm) := fun _ => do
     let ((ty, tm), G) ← (do
         let ty ← checkType cxt (← toRaw a)
         let G ← get
-        let tm ← check cxt (← toRaw t) (eval G cxt.lvl [] cxt.env ty)
+        let tm ← check cxt t (eval G cxt.lvl [] cxt.env ty)
         pure (ty, tm) : ElabM (Tm × Tm)).run G
     pure (← zonk G cxt.env cxt.lvl ty, ← zonk G cxt.env cxt.lvl tm)
   -- `KDEF_TRACE`: as `#trace`; `KDEF_TIME`: one line per definition, on
@@ -501,11 +501,18 @@ def isDecl : Syntax → Bool
   | `(kcmd| def $_ : $_ := $_) | `(kcmd| data $_ := $_|*) => true
   | _ => false
 
+def isDef : Syntax → Bool
+  | `(kcmd| def $_ : $_ := $_) => true
+  | _ => false
+
 /-- Run a definition or diagnostic; `import` is the loader's. Returns the
-new state and the diagnostic's report, if any. -/
-def runCmd (st : KState) (cmd : Syntax) : IO (KState × Option String) := do
+new state and the diagnostic's report, if any. With `bodyAsSorry`, a
+definition is checked at its type only. -/
+def runCmd (st : KState) (cmd : Syntax) (bodyAsSorry := false) : IO (KState × Option String) := do
   match cmd with
-  | `(kcmd| def $x:ident : $a := $t) => pure (← elabDef st x a t, none)
+  | `(kcmd| def $x:ident : $a := $t) =>
+    let body ← if bodyAsSorry then pure Raw.sorry else liftE (toRaw t)
+    pure (← elabDef st x a body, none)
   | `(kcmd| data $x:ident := $cons|*) => pure (← elabData st x cons.getElems, none)
   | `(kcmd| #nf $e) => pure (st, some (← normalize st e))
   | `(kcmd| #time $e) => pure (st, some (← time st e))
@@ -550,6 +557,7 @@ def parseExpr (env : Environment) (input : String) : Except String (TSyntax `kex
 
 inductive Severity
   | error
+  | warning
   | info
   deriving BEq
 
@@ -564,13 +572,34 @@ def Diagnostic.format (ictx : Parser.InputContext) (d : Diagnostic) : String :=
   let pos := ictx.fileMap.toPosition d.pos
   let severity := match d.severity with
     | .error => "error"
+    | .warning => "warning"
     | .info => "info"
   s!"{ictx.fileName}:{pos.line}:{pos.column}: {severity}: {d.msg}"
+
+/-- Shifted by `delta` bytes. -/
+def Diagnostic.shift (d : Diagnostic) (delta : Int) : Diagnostic :=
+  { d with pos := ⟨(d.pos.byteIdx + delta).toNat⟩, endPos := ⟨(d.endPos.byteIdx + delta).toNat⟩ }
 
 /-- Errors to stderr, the rest to stdout. -/
 def printDiagnostic (ictx : Parser.InputContext) (d : Diagnostic) : IO Unit := do
   let out ← if d.severity == .error then IO.getStderr else IO.getStdout
   out.putStrLn (d.format ictx)
+
+/-- A command's source text. -/
+def cmdText (ictx : Parser.InputContext) (cmd : Syntax) : String :=
+  let pos := cmd.getPos?.getD 0
+  String.Pos.Raw.extract ictx.fileMap.source pos (cmd.getTailPos?.getD pos)
+
+/-- A checked command of the requested file, reusable while the commands
+before it and the imports are unchanged: `chain` hashes the command's text
+onto its predecessor's chain and the imports' sources. Diagnostics are
+relative to the command's start. -/
+structure Snapshot where
+  chain : UInt64
+  state : KState
+  diags : Array Diagnostic
+  errors : Nat
+  skipped : Bool
 
 /-- Files are loaded once per run, by real path. -/
 structure Loader where
@@ -584,6 +613,13 @@ structure Loader where
   /-- Each command of the requested file before it runs, then `none` when the
   file is done. -/
   progress : Parser.InputContext → Option Syntax → IO Unit := fun _ _ => pure ()
+  /-- Whether to skip a command of the requested file: a definition is then
+  checked at its type only, anything else not at all. -/
+  skip : Parser.InputContext → Syntax → Bool := fun _ _ => false
+  /-- The requested file's commands as last checked, by chain. -/
+  snapshots : Std.HashMap UInt64 Snapshot := {}
+  /-- Those reused or made by this check. -/
+  snapshotsOut : Std.HashMap UInt64 Snapshot := {}
 
 abbrev LoaderM := StateT Loader IO
 
@@ -609,19 +645,19 @@ partial def loadFile (path : System.FilePath) (diagnostics : Bool) (source? : Op
   let mut st : KState := {}
   let mut errors := 0
   let mut cancelled := false
+  let mut chain : UInt64 := 7
   for cmd in cmds do
     if ← IO.checkCanceled then
       cancelled := true
       break
     let l ← get
-    if diagnostics then l.progress ictx (some cmd)
     let pos := cmd.getPos?.getD 0
-    let emit (severity : Severity) (msg : String) : IO Unit :=
-      l.emit ictx { pos, endPos := cmd.getTailPos?.getD pos, severity, msg }
+    let here (severity : Severity) (msg : String) : Diagnostic :=
+      { pos, endPos := cmd.getTailPos?.getD pos, severity, msg }
     match cmd with
     | `(kcmd| import $m:ident) =>
       if !st.defs.isEmpty || !st.datas.isEmpty then
-        emit .error "imports must come before definitions"
+        l.emit ictx (here .error "imports must come before definitions")
         errors := errors + 1
       else
         let file := path.parent.getD "." / (m.getId.toString.replace "." "/" ++ ".ktt")
@@ -629,17 +665,44 @@ partial def loadFile (path : System.FilePath) (diagnostics : Bool) (source? : Op
         st := st.addImports closure
         let bad := closure.filter (·.errors > 0)
         unless bad.isEmpty do
-          emit .error s!"errors in imported {", ".intercalate (bad.toList.map (·.path))}"
+          l.emit ictx (here .error s!"errors in imported {", ".intercalate (bad.toList.map (·.path))}")
+        let sources := (← get).sources
+        for m in closure do
+          chain := mixHash chain (hash (sources[m.path]?.getD ""))
     | _ =>
       if cmd.getKind == ``Syntax.Cmd.moduleDoc then pure ()
       else if diagnostics || isDecl cmd then
-        try
-          let (st', info?) ← runCmd st cmd
-          st := st'
-          if let some info := info? then emit .info info
-        catch e =>
-          emit .error (toString e)
-          errors := errors + 1
+        let skip := diagnostics && l.skip ictx cmd
+        chain := mixHash chain (hash (cmdText ictx cmd))
+        if diagnostics then
+          if let some s := l.snapshots[chain]? then
+            if !s.skipped || skip then
+              for d in s.diags do l.emit ictx (d.shift pos.byteIdx)
+              st := s.state
+              errors := errors + s.errors
+              modify fun l => { l with snapshotsOut := l.snapshotsOut.insert chain s }
+              continue
+          l.progress ictx (some cmd)
+        let mut diags : Array Diagnostic := #[]
+        let mut errs := 0
+        if skip && !isDef cmd then
+          diags := diags.push (here .warning "not checked: past the time budget; checking to here runs it")
+        else
+          try
+            let (st', info?) ← runCmd st cmd (bodyAsSorry := skip)
+            st := st'
+            if skip then
+              diags := diags.push (here .warning "body not checked: past the time budget; checking to here runs it")
+            if let some info := info? then diags := diags.push (here .info info)
+          catch e =>
+            diags := diags.push (here .error (toString e))
+            errs := 1
+        for d in diags do l.emit ictx d
+        errors := errors + errs
+        if diagnostics then
+          let snapshot : Snapshot :=
+            { chain, state := st, diags := diags.map (·.shift (-(pos.byteIdx : Int))), errors := errs, skipped := skip }
+          modify fun l => { l with snapshotsOut := l.snapshotsOut.insert chain snapshot }
   if !cancelled then
     if let some (pos, msg) := parseError then
       (← get).emit ictx { pos, endPos := pos, severity := .error, msg }

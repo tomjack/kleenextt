@@ -28,6 +28,14 @@
     ],
     "commands": [
       {
+        "command": "kleenextt.checkToCursor",
+        "title": "kleenextt: Check to Cursor"
+      },
+      {
+        "command": "kleenextt.checkFile",
+        "title": "kleenextt: Check File in Full"
+      },
+      {
         "command": "kleenextt.restartServer",
         "title": "kleenextt: Restart Server"
       },
@@ -43,6 +51,11 @@
           "type": "string",
           "default": "",
           "description": "A kleenextt executable to use instead of building one from the extension's sources."
+        },
+        "kleenextt.timeBudget": {
+          "type": "number",
+          "default": 5,
+          "description": "Seconds a command may take when checked automatically. Past it, the command is stopped and checked at its type only, until Check to Cursor runs it in full. 0 for no budget."
         }
       }
     },

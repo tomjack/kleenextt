@@ -1,11 +1,21 @@
 # Editor support
 
-`kleenextt --server` is a language server on stdio: it checks each open
-file as it changes, publishing errors and the output of `#` commands as
-diagnostics, and Lean's `$/lean/fileProgress` for the part not yet
-checked. Imports are read from disk and kept while unchanged. A change
-takes effect at the next command boundary, so a slow definition finishes
-first.
+`kleenextt --server` is a language server on stdio. Each open file is
+checked by its own `kleenextt --worker` process, which publishes errors
+and the output of `#` commands as diagnostics, and Lean's
+`$/lean/fileProgress` for the part not yet checked. Commands whose text
+and predecessors are unchanged are reused from the last check; imports
+are read from disk and kept while unchanged.
+
+The evaluator is pure, so a command cannot be interrupted from inside.
+Instead a command that runs past the time budget (5 s by default, an
+initialization option) gets its worker killed and is remembered as slow:
+the replacement worker checks it at its type only, with a warning, so
+what follows still checks against it. "Check to cursor" runs every
+command up to the cursor in full, whatever the budget, and "check file"
+the whole file; the result stays until an edit above it. A killed worker
+starts over, so the file's imports and earlier commands are checked
+again, minus the ones it now knows to skip.
 
 Go to definition is resolved on the syntax: a local name goes to its
 binder, a global one to the latest earlier `def`, `data` or constructor
@@ -28,8 +38,10 @@ lean4-mode must be on the `load-path`:
 Opening a `.ktt` file starts the server through lsp-mode or eglot,
 whichever is installed, using the enclosing project's
 `.lake/build/bin/kleenextt` if built and otherwise
-`kleenextt-executable`. `C-c C-l` runs `kleenextt check` on the file
-under `compile`.
+`kleenextt-executable`. `C-c C-RET` checks in full to point and
+`C-c C-b` the whole file, as in Proof General; `kleenextt-time-budget`
+is the budget. `C-c C-l` runs `kleenextt check` on the file under
+`compile`.
 
 ## VS Code
 

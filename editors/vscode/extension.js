@@ -195,6 +195,9 @@ class Server {
         processId: process.pid,
         rootUri: vscode.Uri.file(cwd).toString(),
         capabilities: {},
+        initializationOptions: {
+          timeBudget: vscode.workspace.getConfiguration('kleenextt').get('timeBudget', 5),
+        },
       }).then(() => {
         if (this.connection !== connection) return;
         connection.notify('initialized', {});
@@ -339,6 +342,22 @@ function activate(context) {
         const locations = result == null ? [] : Array.isArray(result) ? result : [result];
         return locations.map((l) => new vscode.Location(vscode.Uri.parse(l.uri), toRange(l.range)));
       },
+    }),
+    vscode.commands.registerCommand('kleenextt.checkToCursor', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || editor.document.languageId !== LANGUAGE || !server.connection) return;
+      const position = editor.selection.active;
+      return server.connection.request('$/kleenextt/check', {
+        textDocument: { uri: editor.document.uri.toString() },
+        position: { line: position.line, character: position.character },
+      });
+    }),
+    vscode.commands.registerCommand('kleenextt.checkFile', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || editor.document.languageId !== LANGUAGE || !server.connection) return;
+      return server.connection.request('$/kleenextt/check', {
+        textDocument: { uri: editor.document.uri.toString() },
+      });
     }),
     vscode.commands.registerCommand('kleenextt.restartServer', () => server.restart()),
     vscode.commands.registerCommand('kleenextt.rebuildServer', async () => {
