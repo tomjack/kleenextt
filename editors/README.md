@@ -8,19 +8,16 @@ and predecessors are unchanged are reused from the last check; imports
 are read from disk and kept while unchanged.
 
 The evaluator is pure, so a command cannot be interrupted from inside.
-Instead a command that runs past the time budget (5 s by default, an
-initialization option) gets its worker killed and is remembered as slow:
-the replacement worker checks it at its type only, with a warning, so
-what follows still checks against it. "Check to cursor" runs every
-command up to the cursor in full, whatever the budget, and "check file"
-the whole file; the result stays until an edit above it.
+Instead, as in Lean, an edit at or above the command being elaborated
+kills the worker, and a fresh one starts over on the new text; an edit
+below it waits for it to finish.
 
-Checked commands are also kept on disk, in `$XDG_CACHE_HOME/kleenextt`
-or `~/.cache/kleenextt`, keyed by a hash chain over the command's text,
-the commands before it and the imports' sources, and seeded by the
-binary. A killed or fresh worker replays them, so imports, earlier
-commands, and results once obtained in full cost nothing again until
-the text above them changes. `#time` and `#trace` are never cached.
+Checked commands are kept on disk, in `$XDG_CACHE_HOME/kleenextt` or
+`~/.cache/kleenextt`, keyed by a hash chain over the command's text, the
+commands before it and the imports' sources, and seeded by the binary.
+A fresh worker replays them, so imports and unchanged earlier commands
+cost nothing again, and a file once checked opens checked. `#time` and
+`#trace` are never cached.
 
 Go to definition is resolved on the syntax: a local name goes to its
 binder, a global one to the latest earlier `def`, `data` or constructor
@@ -43,10 +40,8 @@ lean4-mode must be on the `load-path`:
 Opening a `.ktt` file starts the server through lsp-mode or eglot,
 whichever is installed, using the enclosing project's
 `.lake/build/bin/kleenextt` if built and otherwise
-`kleenextt-executable`. `C-c C-RET` checks in full to point and
-`C-c C-b` the whole file, as in Proof General; `kleenextt-time-budget`
-is the budget. `C-c C-l` runs `kleenextt check` on the file under
-`compile`.
+`kleenextt-executable`. `C-c C-l` runs `kleenextt check` on the file
+under `compile`.
 
 ## VS Code
 

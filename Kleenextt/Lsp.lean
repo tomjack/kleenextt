@@ -2,7 +2,7 @@ import Lean.Data.Lsp
 import Kleenextt.Frontend
 
 /-! What the server and its workers share: locked output, parameter parsing,
-and the messages they exchange beyond LSP. -/
+and the message they exchange beyond LSP. -/
 
 namespace Kleenextt.Lsp
 
@@ -41,44 +41,17 @@ def toLsp (text : FileMap) (d : Frontend.Diagnostic) : Lsp.Diagnostic :=
   { range := { start := text.utf8PosToLspPos d.pos, «end» := text.utf8PosToLspPos d.endPos }
     severity? := some (match d.severity with
       | .error => .error
-      | .warning => .warning
       | .info => .information)
     source? := some "kleenextt"
     message := d.msg }
 
-/-- A command is known across checks and workers by the hash of its text. -/
-def cmdHash (ictx : Parser.InputContext) (cmd : Syntax) : Nat :=
-  (hash (cmdText ictx cmd)).toNat
-
-/-- The command being elaborated, in `$/kleenextt/command`. -/
-structure CommandInfo where
-  hash : Nat
-  /-- Requested in full, so not subject to the time budget. -/
-  forced : Bool
-  range : Range
-  deriving ToJson, FromJson
-
-/-- Worker to server, `$/kleenextt/command`: what the worker is on, for the
-document version it is checking; no command at the start and end of a
-check. -/
+/-- Worker to server, `$/kleenextt/command`: the range of the command being
+elaborated, for the document version being checked; none at the start and
+end of a check. -/
 structure CommandParams where
   uri : DocumentUri
   version : Nat
-  command? : Option CommandInfo := none
-  deriving ToJson, FromJson
-
-/-- Server to worker, `$/kleenextt/policy`: commands past the time budget,
-checked at their type only, and those requested in full. -/
-structure PolicyParams where
-  slow : Array Nat
-  forced : Array Nat
-  deriving ToJson, FromJson
-
-/-- Client to server, `$/kleenextt/check`: check in full up to `position`, or
-the whole file. -/
-structure CheckParams where
-  textDocument : TextDocumentIdentifier
-  position? : Option Lsp.Position := none
+  range? : Option Range := none
   deriving ToJson, FromJson
 
 end Kleenextt.Lsp

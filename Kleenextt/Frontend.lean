@@ -502,18 +502,11 @@ def isDecl : Syntax → Bool
   | `(kcmd| def $_ : $_ := $_) | `(kcmd| data $_ := $_|*) => true
   | _ => false
 
-def isDef : Syntax → Bool
-  | `(kcmd| def $_ : $_ := $_) => true
-  | _ => false
-
 /-- Run a definition or diagnostic; `import` is the loader's. Returns the
-new state and the diagnostic's report, if any. With `bodyAsSorry`, a
-definition is checked at its type only. -/
-def runCmd (st : KState) (cmd : Syntax) (bodyAsSorry := false) : IO (KState × Option String) := do
+new state and the diagnostic's report, if any. -/
+def runCmd (st : KState) (cmd : Syntax) : IO (KState × Option String) := do
   match cmd with
-  | `(kcmd| def $x:ident : $a := $t) =>
-    let body ← if bodyAsSorry then pure Raw.sorry else liftE (toRaw t)
-    pure (← elabDef st x a body, none)
+  | `(kcmd| def $x:ident : $a := $t) => pure (← elabDef st x a (← liftE (toRaw t)), none)
   | `(kcmd| data $x:ident := $cons|*) => pure (← elabData st x cons.getElems, none)
   | `(kcmd| #nf $e) => pure (st, some (← normalize st e))
   | `(kcmd| #time $e) => pure (st, some (← time st e))
@@ -558,7 +551,6 @@ def parseExpr (env : Environment) (input : String) : Except String (TSyntax `kex
 
 inductive Severity
   | error
-  | warning
   | info
   deriving BEq
 
@@ -573,7 +565,6 @@ def Diagnostic.format (ictx : Parser.InputContext) (d : Diagnostic) : String :=
   let pos := ictx.fileMap.toPosition d.pos
   let severity := match d.severity with
     | .error => "error"
-    | .warning => "warning"
     | .info => "info"
   s!"{ictx.fileName}:{pos.line}:{pos.column}: {severity}: {d.msg}"
 
@@ -622,7 +613,6 @@ structure Snapshot where
   state : KState
   diags : Array Diagnostic
   errors : Nat
-  skipped : Bool
 
 /-- Files are loaded once per run, by real path. -/
 structure Loader where
@@ -636,9 +626,6 @@ structure Loader where
   /-- Each command of the requested file before it runs, then `none` when the
   file is done. -/
   progress : Parser.InputContext → Option Syntax → IO Unit := fun _ _ => pure ()
-  /-- Whether to skip a command of the requested file: a definition is then
-  checked at its type only, anything else not at all. -/
-  skip : Parser.InputContext → Syntax → Bool := fun _ _ => false
   /-- The requested file's commands as last checked, by chain. -/
   snapshots : Std.HashMap UInt64 Snapshot := {}
   /-- Those reused or made by this check. -/
@@ -688,27 +675,31 @@ partial def loadFile (path : System.FilePath) (diagnostics : Bool) (source? : Op
         errors := errors + 1
       else
         let file := path.parent.getD "." / (m.getId.toString.replace "." "/" ++ ".ktt")
-        let closure ← loadFile file false
-        st := st.addImports closure
-        let bad := closure.filter (·.errors > 0)
-        unless bad.isEmpty do
-          l.emit ictx (here .error s!"errors in imported {", ".intercalate (bad.toList.map (·.path))}")
-        let sources := (← get).sources
-        for m in closure do
-          chain := mixHash chain (hash (sources[m.path]?.getD ""))
+        let loaded : Except IO.Error (Array KModule) ←
+          try pure (.ok (← loadFile file false)) catch e => pure (.error e)
+        match loaded with
+        | .error e =>
+          l.emit ictx (here .error (toString e))
+          errors := errors + 1
+        | .ok closure =>
+          st := st.addImports closure
+          let bad := closure.filter (·.errors > 0)
+          unless bad.isEmpty do
+            l.emit ictx (here .error s!"errors in imported {", ".intercalate (bad.toList.map (·.path))}")
+          let sources := (← get).sources
+          for m in closure do
+            chain := mixHash chain (hash (sources[m.path]?.getD ""))
     | _ =>
       if cmd.getKind == ``Syntax.Cmd.moduleDoc then pure ()
       else if diagnostics || isDecl cmd then
-        let skip := diagnostics && l.skip ictx cmd
         chain := mixHash chain (hash (cmdText ictx cmd))
         if diagnostics then
           if let some s := l.snapshots[chain]? then
-            if !s.skipped || skip then
-              for d in s.diags do l.emit ictx (d.shift pos.byteIdx)
-              st := s.state
-              errors := errors + s.errors
-              modify fun l => { l with snapshotsOut := l.snapshotsOut.insert chain s }
-              continue
+            for d in s.diags do l.emit ictx (d.shift pos.byteIdx)
+            st := s.state
+            errors := errors + s.errors
+            modify fun l => { l with snapshotsOut := l.snapshotsOut.insert chain s }
+            continue
         let cacheable := cmd.getKind != ``Syntax.Cmd.time && cmd.getKind != ``Syntax.Cmd.trace
         if cacheable then
           if let some dir := l.cacheDir then
@@ -717,33 +708,27 @@ partial def loadFile (path : System.FilePath) (diagnostics : Bool) (source? : Op
               st := st.apply c.delta
               errors := errors + c.errors
               if diagnostics then
-                let snapshot : Snapshot :=
-                  { chain, state := st, diags := c.diags, errors := c.errors, skipped := false }
+                let snapshot : Snapshot := { chain, state := st, diags := c.diags, errors := c.errors }
                 modify fun l => { l with snapshotsOut := l.snapshotsOut.insert chain snapshot }
               continue
         if diagnostics then l.progress ictx (some cmd)
         let before := st
         let mut diags : Array Diagnostic := #[]
         let mut errs := 0
-        if skip && !isDef cmd then
-          diags := diags.push (here .warning "not checked: past the time budget; checking to here runs it")
-        else
-          try
-            let (st', info?) ← runCmd st cmd (bodyAsSorry := skip)
-            st := st'
-            if skip then
-              diags := diags.push (here .warning "body not checked: past the time budget; checking to here runs it")
-            if let some info := info? then diags := diags.push (here .info info)
-          catch e =>
-            diags := diags.push (here .error (toString e))
-            errs := 1
+        try
+          let (st', info?) ← runCmd st cmd
+          st := st'
+          if let some info := info? then diags := diags.push (here .info info)
+        catch e =>
+          diags := diags.push (here .error (toString e))
+          errs := 1
         for d in diags do l.emit ictx d
         errors := errors + errs
         let relative := diags.map (·.shift (-(pos.byteIdx : Int)))
         if diagnostics then
-          let snapshot : Snapshot := { chain, state := st, diags := relative, errors := errs, skipped := skip }
+          let snapshot : Snapshot := { chain, state := st, diags := relative, errors := errs }
           modify fun l => { l with snapshotsOut := l.snapshotsOut.insert chain snapshot }
-        if cacheable && !skip then
+        if cacheable then
           if let some dir := l.cacheDir then
             Cache.write dir chain { delta := before.delta st, diags := relative, errors := errs : Cached }
   if !cancelled then

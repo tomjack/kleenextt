@@ -2,11 +2,12 @@ import Lean.Server.Utils
 import Kleenextt.Lsp
 
 /-! `kleenextt --worker`: checks the documents it is sent, one process per
-document under the server, which kills it when a command runs past the time
-budget. A document is checked in its own task, cancelled between commands
+document under the server, which kills it when the command it is on is
+edited. A document is checked in its own task, cancelled between commands
 when it changes; commands whose text and predecessors are unchanged are
-reused from the last check. Imports are read from disk and kept across
-checks while every file in their closure is unchanged. -/
+reused from the last check, or from the disk cache. Imports are read from
+disk and kept across checks while every file in their closure is
+unchanged. -/
 
 namespace Kleenextt.Worker
 
@@ -28,12 +29,6 @@ structure Analysis where
   closure : Array KModule
   sources : Std.HashMap String String
 
-/-- Commands past the time budget, checked at their type only unless
-requested in full. -/
-structure Policy where
-  slow : Std.HashSet Nat := {}
-  forced : Std.HashSet Nat := {}
-
 structure Context where
   env : Environment
   out : Out
@@ -43,7 +38,6 @@ structure Context where
   docs : IO.Ref (Std.HashMap DocumentUri Doc)
   analyses : IO.Ref (Std.HashMap DocumentUri Analysis)
   snapshots : IO.Ref (Std.HashMap DocumentUri (Std.HashMap UInt64 Snapshot))
-  policy : IO.Ref Policy
 
 /-- The cached closures whose files all still have the content they were
 checked from. -/
@@ -66,16 +60,15 @@ def check (ctx : Context) (uri : DocumentUri) (version : Nat) (text : FileMap) :
   let publish : IO Unit := do
     ctx.out.notify "textDocument/publishDiagnostics"
       { uri, version? := some version, diagnostics := ← diags.get : PublishDiagnosticsParams }
-  let status (command? : Option CommandInfo) : IO Unit :=
-    ctx.out.notify "$/kleenextt/command" { uri, version, command? : CommandParams }
+  let status (range? : Option Range) : IO Unit :=
+    ctx.out.notify "$/kleenextt/command" { uri, version, range? : CommandParams }
   let emit (ictx : Parser.InputContext) (d : Frontend.Diagnostic) : IO Unit := do
     if ictx.fileName == path.toString then
       diags.modify (·.push (toLsp text d))
       publish
     else
       IO.eprintln (d.format ictx)
-  let policy ← ctx.policy.get
-  let progress (ictx : Parser.InputContext) (cmd? : Option Syntax) : IO Unit := do
+  let progress (_ : Parser.InputContext) (cmd? : Option Syntax) : IO Unit := do
     match cmd? with
     | some cmd =>
       let pos := cmd.getPos?.getD 0
@@ -84,29 +77,23 @@ def check (ctx : Context) (uri : DocumentUri) (version : Nat) (text : FileMap) :
         { textDocument := { uri, version? := some version }
           processing := #[{ range := { start, «end» := text.utf8PosToLspPos text.source.rawEndPos } }]
           : LeanFileProgressParams }
-      let h := cmdHash ictx cmd
-      let range : Range := { start, «end» := text.utf8PosToLspPos (cmd.getTailPos?.getD pos) }
-      status (some { hash := h, forced := policy.forced.contains h, range })
+      status (some { start, «end» := text.utf8PosToLspPos (cmd.getTailPos?.getD pos) })
     | none =>
       ctx.out.notify "$/lean/fileProgress"
         { textDocument := { uri, version? := some version }, processing := #[] : LeanFileProgressParams }
       status none
-  let skip (ictx : Parser.InputContext) (cmd : Syntax) : Bool :=
-    let h := cmdHash ictx cmd
-    policy.slow.contains h && !policy.forced.contains h
   publish
   status none
   let cache ← (← ctx.cache.get).fresh
   let snapshots := (← ctx.snapshots.get)[uri]?.getD {}
   let loader : Loader :=
-    { env := ctx.env, loaded := cache.loaded, sources := cache.sources, emit, progress, skip, snapshots
+    { env := ctx.env, loaded := cache.loaded, sources := cache.sources, emit, progress, snapshots
       cacheDir := ctx.cacheDir, seed := ctx.seed }
   let (closure, l) ← (loadFile path true (some text.source)).run loader
   ctx.snapshots.modify (·.insert uri l.snapshotsOut)
   unless ← IO.checkCanceled do
     ctx.cache.modify (·.merge l)
     ctx.analyses.modify (·.insert uri { closure, sources := l.sources })
-    ctx.policy.modify fun p => { p with forced := {} }
 
 /-- Replace the document's check, after the previous one has stopped. -/
 def startCheck (ctx : Context) (uri : DocumentUri) (version : Nat) (text : FileMap) : IO Unit := do
@@ -169,11 +156,6 @@ partial def loop (ctx : Context) (inp : IO.FS.Stream) : IO Unit := do
     if let some d := (← ctx.docs.get)[uri]? then
       let text := Lean.Server.foldDocumentChanges p.contentChanges d.text
       startCheck ctx uri (p.textDocument.version?.getD (d.version + 1)) text
-  | .notification "$/kleenextt/policy" params? =>
-    let p : PolicyParams ← parseParams params?
-    ctx.policy.set { slow := Std.HashSet.ofArray p.slow, forced := Std.HashSet.ofArray p.forced }
-    for (uri, d) in ← ctx.docs.get do
-      startCheck ctx uri d.version d.text
   | _ => pure ()
   loop ctx inp
 
@@ -186,8 +168,7 @@ def run (env : Environment) : IO UInt32 := do
     cache := ← IO.mkRef {}
     docs := ← IO.mkRef {}
     analyses := ← IO.mkRef {}
-    snapshots := ← IO.mkRef {}
-    policy := ← IO.mkRef {} }
+    snapshots := ← IO.mkRef {} }
   loop ctx (← IO.getStdin)
   pure 0
 

@@ -48,48 +48,6 @@
   :type 'hook
   :group 'kleenextt)
 
-(defcustom kleenextt-time-budget 5
-  "Seconds a command may take when checked automatically.
-Past it, the command is stopped and checked at its type only, until
-`kleenextt-check-to-point' runs it in full.  0 for no budget."
-  :type 'number
-  :group 'kleenextt)
-
-(defun kleenextt--init-options ()
-  "The server's initialization options."
-  (list :timeBudget kleenextt-time-budget))
-
-(declare-function lsp-request "lsp-mode")
-(declare-function lsp--text-document-identifier "lsp-mode")
-(declare-function lsp--cur-position "lsp-mode")
-(declare-function eglot--current-server-or-lose "eglot")
-(declare-function eglot--TextDocumentIdentifier "eglot")
-(declare-function eglot--pos-to-lsp-position "eglot")
-(declare-function jsonrpc-request "jsonrpc")
-
-(defun kleenextt--check-request (position)
-  "Ask the server to check in full up to POSITION, or the whole file if nil."
-  (cond
-   ((bound-and-true-p lsp-mode)
-    (lsp-request "$/kleenextt/check"
-                 (append (list :textDocument (lsp--text-document-identifier))
-                         (and position (list :position (lsp--cur-position))))))
-   ((bound-and-true-p eglot--managed-mode)
-    (jsonrpc-request (eglot--current-server-or-lose) :$/kleenextt/check
-                     (append (list :textDocument (eglot--TextDocumentIdentifier))
-                             (and position (list :position (eglot--pos-to-lsp-position))))))
-   (t (user-error "No language server for this buffer"))))
-
-(defun kleenextt-check-to-point ()
-  "Check the file in full up to point, past the time budget."
-  (interactive)
-  (kleenextt--check-request (point)))
-
-(defun kleenextt-check-buffer ()
-  "Check the whole file in full, past the time budget."
-  (interactive)
-  (kleenextt--check-request nil))
-
 (defconst kleenextt-keywords
   '("import" "def" "data" "case" "hlevel" "let"))
 
@@ -120,8 +78,6 @@ Past it, the command is stopped and checked at its type only, until
 (defvar kleenextt-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-l") #'kleenextt-check)
-    (define-key map (kbd "C-c C-<return>") #'kleenextt-check-to-point)
-    (define-key map (kbd "C-c C-b") #'kleenextt-check-buffer)
     map))
 
 (defun kleenextt-check-command ()
@@ -179,14 +135,12 @@ Its `FILE:LINE:COL: error:' lines are what `next-error' expects."
                        (lambda () (list (kleenextt-executable) "--server")))
       :major-modes '(kleenextt-mode)
       :server-id 'kleenextt
-      :initialization-options #'kleenextt--init-options
       :notification-handlers handlers))))
 
 (with-eval-after-load 'eglot
   (add-to-list 'eglot-server-programs
                `(kleenextt-mode . ,(lambda (_interactive)
-                                     (list (kleenextt-executable) "--server"
-                                           :initializationOptions (kleenextt--init-options))))))
+                                     (list (kleenextt-executable) "--server")))))
 
 (provide 'kleenextt-mode)
 ;;; kleenextt-mode.el ends here
