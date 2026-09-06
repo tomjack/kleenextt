@@ -329,6 +329,17 @@ function activate(context) {
       if (document.languageId === LANGUAGE) server.close(document);
     }),
     vscode.window.onDidChangeVisibleTextEditors(() => server.updateProgress()),
+    vscode.languages.registerDefinitionProvider(LANGUAGE, {
+      provideDefinition: async (document, position) => {
+        if (!server.connection) return null;
+        const result = await server.connection.request('textDocument/definition', {
+          textDocument: { uri: document.uri.toString() },
+          position: { line: position.line, character: position.character },
+        });
+        const locations = result == null ? [] : Array.isArray(result) ? result : [result];
+        return locations.map((l) => new vscode.Location(vscode.Uri.parse(l.uri), toRange(l.range)));
+      },
+    }),
     vscode.commands.registerCommand('kleenextt.restartServer', () => server.restart()),
     vscode.commands.registerCommand('kleenextt.rebuildServer', async () => {
       await server.stop();

@@ -1,4 +1,5 @@
 import Kleenextt.Syntax
+import Kleenextt.Symbols
 import Kleenextt.Core.Check
 
 /-! From `kcmd` syntax to the elaborator: a `.ktt` file is a sequence of
@@ -197,6 +198,8 @@ structure KModule where
   datas : Array DataInfo
   /-- Errors reported while checking this file, its imports aside. -/
   errors : Nat
+  /-- The names its commands define, in order. -/
+  symbols : Array Symbols.Symbol
 
 /-- Imports first, in dependency order, then the file's own definitions. -/
 structure KState where
@@ -224,8 +227,8 @@ def addImports (st : KState) (closure : Array KModule) : KState :=
   closure.foldl (init := st) fun st m =>
     if st.imports.any (·.path == m.path) then st else { st with imports := st.imports.push m }
 
-def toModule (st : KState) (path : String) (errors : Nat) : KModule :=
-  { path, defs := st.defs, datas := st.datas, errors }
+def toModule (st : KState) (path : String) (errors : Nat) (symbols : Array Symbols.Symbol) : KModule :=
+  { path, defs := st.defs, datas := st.datas, errors, symbols }
 
 end KState
 
@@ -642,7 +645,7 @@ partial def loadFile (path : System.FilePath) (diagnostics : Bool) (source? : Op
       (← get).emit ictx { pos, endPos := pos, severity := .error, msg }
       errors := errors + 1
     if diagnostics then (← get).progress ictx none
-  let closure := st.imports.push (st.toModule real errors)
+  let closure := st.imports.push (st.toModule real errors (cmds.flatMap Symbols.ofCmd))
   modify fun l => { l with
     errors := l.errors + errors
     loading := l.loading.drop 1

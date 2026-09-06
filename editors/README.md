@@ -5,7 +5,12 @@ file as it changes, publishing errors and the output of `#` commands as
 diagnostics, and Lean's `$/lean/fileProgress` for the part not yet
 checked. Imports are read from disk and kept while unchanged. A change
 takes effect at the next command boundary, so a slow definition finishes
-first. There is no hover or go-to-definition.
+first.
+
+Go to definition is resolved on the syntax: a local name goes to its
+binder, a global one to the latest earlier `def`, `data` or constructor
+in the file as it currently reads, else to one in an import as of the
+last completed check, and an `import` to its file. There is no hover.
 
 ## Emacs
 
